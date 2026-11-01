@@ -556,7 +556,7 @@ function drawName(){
 
 // ---------- Classement entre amis (Google Apps Script) ----------
 // marche sur le site GitHub ; dans l'artifact claude.ai, le réseau est bloqué
-const LB_URL = 'LB_URL_A_REMPLIR';
+const LB_URL = 'https://script.google.com/macros/s/AKfycbwoeVB6kM4BwQj6q0EyTLvaVmzvhe5Hy9IwEUr_7TPSZlOSmWStc6DaSgbwOPVif6VrPQ/exec';
 let lbData = null, lbState = 'idle', boardFrom = 'title';
 function lbSend(){
   if (!SAVE.name || !LB_URL.startsWith('https')) return;
