@@ -221,6 +221,36 @@ function wind(on){
   } else if (!on && windNode){ const w = windNode; windNode = null; w.g.gain.setTargetAtTime(.0001, actx.currentTime, .15); setTimeout(() => { try { w.n.stop(); } catch(e){} }, 600); }
 }
 
+// ---------- Animation : courbes douces et petites particules ----------
+const clamp01 = k => Math.max(0, Math.min(1, k));
+const ease = {
+  out: k => 1 - Math.pow(1 - k, 3),
+  // rebondit au sol avant de s'arrêter
+  bounce: k => { const n = 7.5625, d = 2.75; if (k < 1 / d) return n * k * k; if (k < 2 / d) return n * (k -= 1.5 / d) * k + .75; if (k < 2.5 / d) return n * (k -= 2.25 / d) * k + .9375; return n * (k -= 2.625 / d) * k + .984375; },
+};
+// fumée du canon, poussière au sol, étincelles, pièces qui volent vers le score
+let parts = [];
+function puff(x, y, n, o = {}){
+  for (let i = 0; i < n; i++) parts.push({ x, y, vx: (o.vx || 0) + (Math.random() - .5) * (o.spread || 40), vy: (o.vy || -20) + (Math.random() - .5) * 20,
+    r: (o.r || 5) * (.6 + Math.random() * .8), life: 0, max: o.max || .7, col: o.col || C.faint, grow: o.grow == null ? 10 : o.grow });
+}
+function coins(x, y, tx, ty, n){ for (let i = 0; i < n; i++) parts.push({ coin: true, x0: x + (Math.random() - .5) * 24, y0: y, tx, ty, x, y, life: -i * .05, max: .6 }); }
+function updateParts(dt){
+  parts.forEach(q => {
+    q.life += dt;
+    if (q.coin) { const k = ease.out(clamp01(q.life / q.max)); q.x = q.x0 + (q.tx - q.x0) * k; q.y = q.y0 + (q.ty - q.y0) * k - Math.sin(k * Math.PI) * 70; }
+    else { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .95; q.r += q.grow * dt; }
+  });
+  parts = parts.filter(q => q.life < q.max);
+}
+function drawParts(){
+  parts.forEach(q => {
+    if (q.life < 0) return;
+    if (q.coin) { ctx.fillStyle = C.orange; ctx.fillRect(q.x - 4, q.y - 4, 8, 8); ctx.fillStyle = C.orangeD; ctx.fillRect(q.x - 1, q.y - 3, 2, 6); return; }
+    ctx.globalAlpha = 1 - q.life / q.max; ctx.fillStyle = q.col; ctx.fillRect(q.x - q.r, q.y - q.r, q.r * 2, q.r * 2); ctx.globalAlpha = 1;
+  });
+}
+
 // ---------- Dessin : le cow-boy en blocs ----------
 // Chaque bandit a sa silhouette : taille, chapeau, visage, tenue et arme
 const LOOKS = {
@@ -239,14 +269,22 @@ const LOOKS = {
 function cowboy(x, y, s, dir, opts = {}){
   const L = opts.L || LOOKS[opts.look || (opts.bandit ? 'bandit' : 'hero')] || LOOKS.bandit, bandit = !!opts.bandit;
   const sc = L.sc || 1, aiming = opts.pose === 'aim' || opts.pose === 'twirl';
+  const seed = opts.seed || 0, still = !opts.rot, walk = opts.walk;
+  // il respire quand il attend
+  const breath = still && walk == null ? 1 + Math.sin(T * 2.2 + seed) * .018 : 1;
   ctx.save(); ctx.translate(x, y); if (opts.rot) ctx.rotate(opts.rot);
   if (L.shake && !opts.rot) ctx.translate(Math.sin(T * 47) * 1.4, 0);
-  ctx.scale(s * dir * sc * (L.sx || 1), s * sc * (L.sy || 1));
+  ctx.scale(s * dir * sc * (L.sx || 1), s * sc * (L.sy || 1) * breath);
   const r = (a, b, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(a, b, w, h); };
   const poly = (col, pts) => { ctx.fillStyle = col; ctx.beginPath(); pts.forEach(([a, b], i) => i ? ctx.lineTo(a, b) : ctx.moveTo(a, b)); ctx.fill(); };
   // jambes (ou longue jupe), bottes
   if (L.skirt) { poly(C.mid, [[-14, -36], [14, -36], [20, -4], [-20, -4]]); r(-12, -4, 9, 4, C.dark); r(3, -4, 9, 4, C.dark); }
-  else { r(-9, -30, 7, 30, C.light); r(2, -30, 7, 30, C.light); r(-11, -6, 9, 6, C.dark); r(2, -6, 9, 6, C.dark); }
+  else {
+    // en marchant, les jambes avancent l'une après l'autre
+    const st = walk == null ? 0 : Math.sin(walk), a1 = st * 4, a2 = -st * 4, l1 = Math.max(0, st) * 4, l2 = Math.max(0, -st) * 4;
+    r(-9 + a1, -30, 7, 30 - l1, C.light); r(2 + a2, -30, 7, 30 - l2, C.light);
+    r(-11 + a1, -6 - l1, 9, 6, C.dark); r(2 + a2, -6 - l2, 9, 6, C.dark);
+  }
   // canne de mamie
   if (L.cane) { r(-30, -42, 3, 42, C.dark); r(-33, -44, 9, 3, C.dark); }
   // holster(s) sur la hanche
@@ -266,7 +304,8 @@ function cowboy(x, y, s, dir, opts = {}){
     poly(C.dark, [[-14, -74], [14, -74], [0, -60]]);
     r(-31, -40, 62, 5, C.dark); r(-4, -41, 8, 7, C.light);
   } else {
-    poly(L.shawl ? C.light : body, [[-24, -34], [-14, -74], [14, -74], [24, -34]]);
+    const sway = Math.sin(T * 1.7 + seed) * 1.5 + (walk == null ? 0 : Math.sin(walk) * 1.5);
+    poly(L.shawl ? C.light : body, [[-24 + sway, -34], [-14, -74], [14, -74], [24 + sway, -34]]);
     poly(bandit ? C.dark : C.light, [[-14, -74], [14, -74], [0, -56]]);
     if (L.shawl) for (let i = -22; i < 22; i += 5) r(i, -34, 2, 4, C.mid);
     if (L.stripes) { r(-19, -54, 38, 4, C.light); r(-21, -46, 42, 3, C.orange); r(-22, -40, 44, 3, C.light); }
@@ -278,16 +317,24 @@ function cowboy(x, y, s, dir, opts = {}){
   // la tête et le visage
   r(-12, -96, 24, 22, '#d6d6d6');
   face(L, r, bandit);
+  // il cligne des yeux de temps en temps (pas ceux qui ont des lunettes ou les yeux fermés)
+  if (still && ((T * .9 + seed * 1.37) % 3.2) < .12 && !['mamie', 'doc', 'dort', 'boude'].includes(L.face)) {
+    r(-9, -94, 18, 6, '#d6d6d6'); r(-7, -91, 5, 1, C.ink); r(3, -91, 5, 1, C.ink);
+  }
   if (opts.hat !== false) lookHat(L, 0, -96, bandit);
+  // la main se rapproche doucement du revolver pendant l'attente
+  if (opts.reach != null && !aiming && !L.rifle) { const hx = L.fat ? 12 : 0; r(8 + hx + opts.reach * 10, -52 + opts.reach * 3, 6, 6, '#d6d6d6'); }
   // bras et arme
   const armY = L.fat ? -64 : -66, armX = L.fat ? 26 : 14;
   if (opts.pose === 'hands'){ r(-22, -104, 7, 32, C.light); r(15, -104, 7, 32, C.light); }
   else if (opts.pose === 'aim'){
-    if (L.rifle) { r(armX, armY, 22, 8, C.light); rifle(36, armY, opts.flash); }
+    ctx.save(); ctx.translate(armX, armY + 4); ctx.rotate(opts.armA || 0);
+    if (L.rifle) { r(0, -4, 22, 8, C.light); rifle(22, -4, opts.flash); }
     else {
-      r(armX, armY, 30, 8, L.coat ? '#eeeeee' : C.mid); revolver(armX + 30, armY, 1, opts.flash);
-      if (L.two) { r(armX, armY + 10, 28, 7, C.mid); revolver(armX + 28, armY + 10, .9, opts.flash); }
+      r(0, -4, 30, 8, L.coat ? '#eeeeee' : C.mid); revolver(30, -4, 1, opts.flash);
+      if (L.two) { r(0, 6, 28, 7, C.mid); revolver(28, 6, .9, opts.flash); }
     }
+    ctx.restore();
   } else if (opts.pose === 'twirl'){
     r(14, -66, 22, 8, C.mid);
     ctx.save(); ctx.translate(40, -62); ctx.rotate(opts.spin || 0); revolver(-4, 0, .9); ctx.restore();
@@ -390,14 +437,19 @@ function bellPost(cx, top, swing, lit){
 
 // ---------- Interface : boutons en blocs ----------
 let buttons = [];
+const popAt = {};
 function button(id, x, y, w, h, label, opts = {}){
-  const pressed = pressId === id;
+  const pressed = pressId === id, k = T - (popAt[id] == null ? -9 : popAt[id]);
+  // petit rebond juste après l'appui
+  const sc = k < .35 ? 1 + Math.sin(k / .35 * Math.PI) * .07 * (1 - k / .35) : 1;
+  ctx.save(); ctx.translate(x + w / 2, y + h / 2); ctx.scale(sc, sc); ctx.translate(-(x + w / 2), -(y + h / 2));
   ctx.fillStyle = opts.off ? C.ground : (opts.main ? C.orange : C.white);
   ctx.fillRect(x, y + (pressed ? 3 : 0), w, h);
   ctx.fillStyle = opts.off ? C.faint : (opts.main ? C.orangeD : C.ink);
   ctx.fillRect(x, y + h + (pressed ? 0 : 0), w, pressed ? 0 : 4);
   if (!opts.main && !opts.off){ ctx.fillStyle = C.ink; ctx.fillRect(x, y + (pressed ? 3 : 0), w, 3); ctx.fillRect(x, y + (pressed ? 3 : 0), 3, h); ctx.fillRect(x + w - 3, y + (pressed ? 3 : 0), 3, h); }
   drawText(label, x + w / 2, y + h / 2 - 7 + (pressed ? 3 : 0), 2, opts.off ? C.light : (opts.main ? C.white : C.ink), 'center');
+  ctx.restore();
   if (!opts.off) buttons.push({ id, x, y, w, h: h + 4 });
 }
 
@@ -429,16 +481,17 @@ if (!SAVE.name) scene = 'name';
 const duel = { n: 1, score: 0, state: 'intro', t: 0, waitFor: 0, rt: 0, my: 0, fake: null, fakeAt: 0, fall: 0, hatFly: null, early: false, newBest: false, points: 0 };
 let titleTaps = 0, titleTapT = 0;
 
+let fadeT = 0, weed = null, weedT = 3;
 function go(s){
-  scene = s; pressId = null;
+  scene = s; pressId = null; fadeT = 0; parts = [];
   if (s === 'board') lbLoad();
   fuse(false);
   if (s === 'duel') { Music.set('duel'); startDuelRun(); } else { Music.set('town'); wind(false); }
   if (s === 'wanted') startWanted();
 }
-function startDuelRun(){ duel.n = 1; duel.score = 0; duel.newBest = false; newRound(); }
+function startDuelRun(){ duel.n = 1; duel.score = 0; duel.disp = 0; duel.newBest = false; newRound(); }
 function newRound(){
-  Object.assign(duel, { state: 'intro', t: 0, rt: banditTime(duel.n), my: 0, fake: null, fall: 0, hatFly: null, early: false, points: 0, myHatFly: null });
+  Object.assign(duel, { state: 'intro', t: 0, rt: banditTime(duel.n), my: 0, fake: null, fall: 0, hatFly: null, early: false, points: 0, myHatFly: null, smoke: false, dust: false });
   duel.bandit = banditFor(duel.n);
   duel.waitFor = 1.6 + Math.random() * 2.6;
   // fausses alertes à partir du 3e bandit
@@ -447,10 +500,21 @@ function newRound(){
 }
 
 function update(dt){
-  T += dt;
+  T += dt; fadeT += dt; updateParts(dt);
+  // une boule d'herbe sèche traverse l'accueil de temps en temps
+  if (scene === 'title'){
+    if (weed) { weed.x += 95 * dt; weed.a += 6 * dt; if (weed.x > W + 40) weed = null; }
+    else if ((weedT -= dt) <= 0) { weed = { x: -40, a: 0 }; weedT = 6 + Math.random() * 6; }
+  }
   if (scene === 'wanted') { updateWanted(dt); return; }
   if (scene !== 'duel') return;
   const d = duel; d.t += dt;
+  // le score monte en comptant
+  d.disp += (d.score - d.disp) * Math.min(1, dt * 5); if (Math.abs(d.score - d.disp) < 1) d.disp = d.score;
+  [d.hatFly, d.myHatFly].forEach(h => { if (h) flyHat(h, dt); });
+  // fumée du canon juste après le coup, poussière quand on tombe
+  if ((d.state === 'won' || (d.state === 'lost' && !d.early)) && !d.smoke && d.t > .06) { d.smoke = true; puff(d.state === 'won' ? 168 : 192, 446, 7, { vx: d.state === 'won' ? 30 : -30, vy: -18, r: 4, max: .9, grow: 9 }); }
+  if ((d.state === 'won' || (d.state === 'lost' && !d.early)) && !d.dust && d.t > .2) { d.dust = true; const gx = d.state === 'won' ? 250 : 110; puff(gx, 516, 8, { spread: 90, vy: -12, r: 5, max: .8, col: C.faint }); puff(gx + (d.state === 'won' ? 50 : -50), 516, 6, { spread: 70, vy: -10, r: 4, max: .7, col: C.faint }); }
   if (d.state === 'intro' && d.t > 2.2){ d.state = 'wait'; d.t = 0; wind(true); }
   else if (d.state === 'wait'){
     if (d.fake && !d.fakeOn && d.t > d.fakeAt){ d.fakeOn = true; d.fakeT = 0; ({ mouche: sfx.fly, poule: sfx.cluck, boule: sfx.tumble })[d.fake](); }
@@ -459,15 +523,23 @@ function update(dt){
   }
   else if (d.state === 'go' && d.t > d.rt){
     // trop lent : le bandit tire le premier
-    d.state = 'lost'; d.t = 0; sfx.bangFar(); setTimeout(sfx.whoosh, 120); d.myHatFly = { x: 100, y: 424, vx: -30, vy: -260, a: 0 };
+    d.state = 'lost'; d.t = 0; sfx.bangFar(); setTimeout(sfx.whoosh, 120); d.myHatFly = { x: 100, y: 424, vx: -30, vy: -260, a: 0, spin: -6 };
   }
   else if (d.state === 'won'){
-    if (d.hatFly){ const h = d.hatFly; h.vy += 700 * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.a += 6 * dt; if (h.y > 520) { h.y = 520; h.vy = 0; h.vx = 0; } }
     if (d.t > 2.4){ d.n++; newRound(); }
   }
   else if (d.state === 'lost'){
-    if (d.myHatFly){ const h = d.myHatFly; h.vy += 700 * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.a -= 6 * dt; if (h.y > 520) { h.y = 520; h.vy = 0; h.vx = 0; } }
     if (d.t > 2.2){ endRun(); }
+  }
+}
+// un chapeau qui vole, tournoie, rebondit une fois puis se pose
+function flyHat(h, dt){
+  if (h.rest) return;
+  h.vy += 700 * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.a += (h.spin || 6) * dt;
+  if (h.y > 520 && h.vy > 0) {
+    h.y = 520;
+    if (h.vy > 150) { h.vy *= -.35; h.vx *= .5; puff(h.x, 518, 4, { spread: 40, vy: -8, r: 3, max: .5, col: C.ground }); }
+    else { h.vy = 0; h.vx = 0; h.rest = true; h.a = Math.round(h.a / Math.PI) * Math.PI; }
   }
 }
 function endRun(){
@@ -494,14 +566,15 @@ function shoot(){
 function drawTitle(){
   // logo : chapeau orange au-dessus du nom
   const bob = Math.sin(T * 2) * 3;
-  hat(180, 230 + bob, 3.2, C.ink, C.orange);
+  ctx.save(); ctx.translate(180, 230 + bob); ctx.rotate(Math.sin(T * 1.3) * .04); hat(0, 0, 3.2, C.ink, C.orange); ctx.restore();
   const x0 = 180 - textW('YIIIHA!', 7) / 2, bang = x0 + 6 * 6 * 7;
   drawText('YIIIHA', x0 + 4, 262, 7, C.faint); drawText('!', bang + 4, 262, 7, C.orangeD);
   drawText('YIIIHA', x0, 258, 7, C.ink); drawText('!', bang, 258, 7, C.orange);
   drawText('Mini-jeux du Far West', 180, 330, 2, C.mid, 'center');
   ctx.fillStyle = C.ground; ctx.fillRect(0, 520, W, 5);
-  cowboy(110, 520, .9, 1, {});
-  cowboy(250, 520, .9, -1, { bandit: true });
+  cowboy(110, 520, .9, 1, { seed: 1 });
+  cowboy(250, 520, .9, -1, { bandit: true, seed: 4 });
+  if (weed) { const y = 505 - Math.abs(Math.sin(weed.x / 22)) * 16; ctx.save(); ctx.translate(weed.x, y); ctx.rotate(weed.a); ctx.strokeStyle = C.light; ctx.lineWidth = 3; ctx.strokeRect(-12, -12, 24, 24); ctx.strokeRect(-6, -6, 12, 12); ctx.restore(); }
   drawText('Salut ' + SAVE.name + ' !', 180, 365, 2, C.ink, 'center');
   button('play', 22, 560, 152, 52, 'Jouer', { main: true });
   button('board', 186, 560, 152, 52, 'Classement');
@@ -538,7 +611,7 @@ function drawDuel(){
   const d = duel;
   // haut : numéro du bandit et score
   drawText('Bandit n°' + d.n, 24, 28, 2, C.mid);
-  drawText(String(d.score), W - 24, 22, 4, C.ink, 'right');
+  drawText(String(Math.round(d.disp || 0)), W - 24, 22, 4, C.ink, 'right');
   drawText('Record ' + SAVE.best.duel, W - 24, 56, 2, C.light, 'right');
   // cloche
   const lit = d.state === 'go' || (d.state === 'won' && d.t < .8);
@@ -551,28 +624,31 @@ function drawDuel(){
   // le héros (gauche)
   const heroPose = d.state === 'won' ? (d.t < 1.2 ? 'aim' : (d.t < 1.7 ? 'twirl' : 'idle')) : 'idle';
   if (d.state === 'lost' && !d.early || (d.state === 'over' && !d.early)){
-    const k = d.state === 'over' ? 1 : Math.min(1, d.t / .35);
-    cowboy(90 + k * 50, 520 - Math.sin(k * Math.PI) * 30, 1.1, 1, { rot: -k * Math.PI / 2, hat: false });
-    if (d.myHatFly) hat(d.myHatFly.x, d.myHatFly.y, 1.1, C.dark);
+    const k = d.state === 'over' ? 1 : clamp01(d.t / .55);
+    cowboy(90 + ease.out(k) * 50, 520 - Math.sin(clamp01(d.t / .22) * Math.PI) * 26, 1.1, 1, { rot: -ease.bounce(k) * Math.PI / 2, hat: false });
+    if (d.myHatFly) { ctx.save(); ctx.translate(d.myHatFly.x, d.myHatFly.y); ctx.rotate(d.myHatFly.a); hat(0, 0, 1.1, C.dark); ctx.restore(); }
   } else {
-    cowboy(90, 520, 1.1, 1, { pose: heroPose, flash: d.state === 'won' && d.t < .12, spin: (d.t - 1.2) * 28 });
+    const reach = d.state === 'wait' ? clamp01(d.t / Math.max(1, d.waitFor)) * .8 : (d.state === 'go' ? 1 : 0);
+    cowboy(90, 520, 1.1, 1, { seed: 1, pose: heroPose, reach, armA: drawArm(d.t), flash: d.state === 'won' && d.t > .03 && d.t < .14, spin: (d.t - 1.2) * 28 });
   }
   // le bandit (droite)
   if (d.state === 'won'){
-    const k = Math.min(1, d.t / .35);
-    // il part à la renverse en reculant, pour rester dans l'écran
-    cowboy(270 - k * 50, 520 - Math.sin(k * Math.PI) * 30, 1.1, -1, { bandit: true, look: d.bandit.look, rot: k * Math.PI / 2, hat: false });
+    const k = clamp01(d.t / .55);
+    // il part à la renverse en reculant, rebondit une fois au sol
+    cowboy(270 - ease.out(k) * 50, 520 - Math.sin(clamp01(d.t / .22) * Math.PI) * 26, 1.1, -1, { bandit: true, look: d.bandit.look, rot: ease.bounce(k) * Math.PI / 2, hat: false });
     if (d.hatFly) { ctx.save(); ctx.translate(d.hatFly.x, d.hatFly.y); ctx.rotate(d.hatFly.a); ctx.scale(1.1, 1.1); lookHat(LOOKS[d.bandit.look] || LOOKS.bandit, 0, 0, true); ctx.restore(); }
     if (d.t < .25){ ctx.fillStyle = C.orange; for (let x = 150; x < 240; x += 12) ctx.fillRect(x, 445, 6, 2); }
   } else if (d.state === 'lost' && !d.early || (d.state === 'over' && !d.early)){
-    cowboy(270, 520, 1.1, -1, { bandit: true, look: d.bandit.look, pose: 'aim', flash: d.state === 'lost' && d.t < .12 });
+    cowboy(270, 520, 1.1, -1, { bandit: true, seed: 4, look: d.bandit.look, pose: 'aim', armA: d.state === 'over' ? 0 : drawArm(d.t), flash: d.state === 'lost' && d.t > .03 && d.t < .14 });
   } else {
     const shake = d.state === 'lost' && d.early ? Math.sin(T * 40) * 2 : 0;
-    cowboy(270 + shake, 520, 1.1, -1, { bandit: true, look: d.bandit.look });
+    const reachB = d.state === 'wait' ? clamp01(d.t / Math.max(1, d.waitFor)) * .8 : (d.state === 'go' ? 1 : 0);
+    cowboy(270 + shake, 520, 1.1, -1, { bandit: true, seed: 4, look: d.bandit.look, reach: reachB });
     // Señor Siesta fait la sieste en attendant la cloche
     if (d.bandit.look === 'siesta' && (d.state === 'intro' || d.state === 'wait'))
       [0, 1, 2].forEach(i => { const k = (T * .6 + i / 3) % 1; drawText('z', 290 + k * 30, 400 - k * 50, 2 + Math.round(k * 2), C.light); });
   }
+  drawParts();
   // bas : messages
   const mx = 180, my = 580;
   if (d.state === 'intro'){
@@ -585,7 +661,7 @@ function drawDuel(){
   } else if (d.state === 'won'){
     drawText('Touché !', mx, my, 4, C.ink, 'center');
     drawText(d.my.toFixed(2).replace('.', ',') + ' s', mx, my + 40, 2, C.mid, 'center');
-    drawText('+' + d.points, mx, my + 64, 3, C.orange, 'center');
+    drawText('+' + d.points, mx, my + 64 - (d.t < .2 ? 4 : 0), d.t < .2 ? 4 : 3, C.orange, 'center');
     if (d.t > .5) wrap('« ' + d.bandit.lose + ' »', 2, 320).forEach((l, i) => drawText(l, mx, my + 100 + i * 20, 2, C.mid, 'center'));
   } else if (d.state === 'lost'){
     drawText(d.early ? 'Trop tôt !' : 'Trop lent !', mx, my, 4, C.ink, 'center');
@@ -593,6 +669,8 @@ function drawDuel(){
     if (d.t > .5) wrap('« ' + d.bandit.win + ' »', 2, 320).forEach((l, i) => drawText(l, mx, my + 80 + i * 20, 2, C.ink, 'center'));
   } else if (d.state === 'over') drawOver();
 }
+// le bras : il remonte du holster en un éclair, puis le recul du coup le fait sauter un peu
+function drawArm(t){ return t < .06 ? 1.4 * (1 - ease.out(t / .06)) : -.4 * (1 - ease.out(clamp01((t - .06) / .4))); }
 function drawFake(kind, t){
   if (kind === 'mouche'){
     const x = 40 + t * 180, y = 330 + Math.sin(t * 14) * 25 + Math.cos(t * 9) * 10;
@@ -630,6 +708,8 @@ function draw(){
   if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else drawDuel();
   placePseudo();
   if (askReset) { buttons = []; drawReset(); }
+  // fondu en entrant dans un écran
+  if (fadeT < .3) { ctx.fillStyle = 'rgba(255,255,255,' + (1 - ease.out(fadeT / .3)) + ')'; ctx.fillRect(-offX / scale, -offY / scale, W + 2 * offX / scale, H + 2 * offY / scale); }
 }
 
 // ---------- Mini-jeu : Avis de recherche (WANTED) ----------
@@ -652,7 +732,7 @@ function randomLook(){ const L = {}; FEAT_KEYS.forEach(k => { L[k] = pick(FEAT[k
 function lookAlike(t){ const L = Object.assign({}, t, { fat: Math.random() < .25, sc: .9 + Math.random() * .2 }), k = pick(FEAT_KEYS); L[k] = pick(FEAT[k].filter(v => v !== t[k])); return L; }
 
 function startWanted(){
-  Object.assign(WT, { state: 'play', t: 0, fuse: FUSE_START, caught: 0, score: 0, newBest: false, coach: null, coachT: 6, msg: null, boom: 0 });
+  Object.assign(WT, { state: 'play', t: 0, fuse: FUSE_START, caught: 0, score: 0, disp: 0, newBest: false, coach: null, coachT: 6, msg: null, boom: 0 });
   newWanted(); fuse(true);
 }
 function newWanted(){
@@ -668,20 +748,24 @@ function newWanted(){
   WT.people = looks.map((L, i) => ({
     L, x: 30 + Math.random() * 300, y: STREET_TOP + 75 + Math.random() * (STREET_BOT - STREET_TOP - 75),
     vx: (Math.random() < .5 ? -1 : 1) * speed * (.6 + Math.random() * .8), vy: (Math.random() - .5) * speed * .4,
-    ph: Math.random() * 6, target: i === 0, oops: 0, line: '',
+    ph: Math.random() * 6, target: i === 0, oops: 0, line: '', seed: Math.random() * 9,
   }));
   WT.state = 'play'; WT.t = 0;
 }
 function updateWanted(dt){
   const w = WT; w.t += dt;
+  w.disp += (w.score - w.disp) * Math.min(1, dt * 4); if (Math.abs(w.score - w.disp) < 1) w.disp = w.score;
   if (w.state === 'play'){
+    // étincelles de la mèche
+    if (Math.random() < dt * 14) { const end = 52 + 288 * (w.fuse / FUSE_MAX); puff(end, 29, 1, { spread: 50, vy: -40, r: 1.5, max: .35, grow: 0, col: C.orange }); }
     w.fuse -= dt;
     if (w.fuse <= 0){ w.fuse = 0; w.state = 'boom'; w.t = 0; fuse(false); sfx.boom(); }
     w.people.forEach(p => {
+      // celui qu'on accuse à tort s'arrête net pour râler
+      if (p.oops > 0) { p.oops -= dt; return; }
       p.x += p.vx * dt; p.y += p.vy * dt; p.ph += dt * 9;
       if (p.x < 22 || p.x > 338) { p.vx *= -1; p.x = Math.max(22, Math.min(338, p.x)); }
       if (p.y < STREET_TOP + 75 || p.y > STREET_BOT) { p.vy *= -1; p.y = Math.max(STREET_TOP + 75, Math.min(STREET_BOT, p.y)); }
-      if (p.oops > 0) p.oops -= dt;
     });
     // la diligence passe devant tout le monde (à partir du 6e bandit)
     if (w.caught >= 5){
@@ -710,9 +794,9 @@ function tapWanted(p){
   const q = hits.sort((a, b) => b.y - a.y)[0];
   if (q.target){
     w.state = 'caught'; w.t = 0; w.caught++; w.score += w.prime; w.fuse = Math.min(FUSE_MAX, w.fuse + 3);
-    w.caughtP = q; sfx.sting();
+    w.caughtP = q; sfx.sting(); coins(q.x, q.y - 60, 40, 668, 8);
   } else if (q.oops <= 0){
-    q.oops = 1.2; q.line = pick(NOT_ME); w.fuse = Math.max(0, w.fuse - 2); sfx.grumble();
+    q.oops = 1.2; q.line = pick(NOT_ME); q.vx = (q.x < p.x ? 1 : -1) * Math.abs(q.vx); w.fuse = Math.max(0, w.fuse - 2); sfx.grumble();
   }
 }
 function drawWanted(){
@@ -724,6 +808,8 @@ function drawWanted(){
   if (w.state === 'play'){ ctx.fillStyle = C.orange; const f = 3 + Math.sin(T * 40) * 2; ctx.fillRect(end - f, 29 - f, f * 2, f * 2); ctx.fillStyle = '#ffd34d'; ctx.fillRect(end - 1, 28, 3, 3); }
   // l'affiche
   const px = 95, py = 52, pw = 170, ph = 216;
+  const pt = w.state === 'over' || w.state === 'boom' ? 9 : w.t, drop = -(1 - ease.bounce(clamp01(pt / .5))) * 280, swing = .16 * Math.exp(-Math.max(0, pt - .3) * 3) * Math.sin(Math.max(0, pt - .3) * 9);
+  ctx.save(); ctx.translate(180, py + 9); ctx.rotate(swing); ctx.translate(-180, -(py + 9) + drop);
   ctx.fillStyle = '#f4f4f4'; ctx.fillRect(px, py, pw, ph); ctx.fillStyle = C.ink; ctx.fillRect(px, py, pw, 3); ctx.fillRect(px, py + ph - 3, pw, 3); ctx.fillRect(px, py, 3, ph); ctx.fillRect(px + pw - 3, py, 3, ph);
   ctx.fillStyle = C.mid; ctx.fillRect(px + pw / 2 - 3, py + 6, 6, 6);
   drawText('WANTED', 180, py + 18, 4, C.orange, 'center');
@@ -733,22 +819,26 @@ function drawWanted(){
   ctx.restore();
   drawText('Récompense', 180, py + 168, 2, C.mid, 'center');
   drawText(w.prime + ' $', 180, py + 186, 3, C.ink, 'center');
+  ctx.restore();
   // la grand-rue
   ctx.fillStyle = C.ground; ctx.fillRect(0, STREET_TOP - 4, W, 4);
   for (let i = 0; i < 5; i++) { ctx.fillStyle = '#f3f3f3'; ctx.fillRect(10 + i * 72, 284, 60, STREET_TOP - 288); ctx.fillStyle = C.ground; ctx.fillRect(28 + i * 72, 300, 24, STREET_TOP - 304); }
   const sorted = w.people.slice().sort((a, b) => a.y - b.y);
   sorted.forEach(q => {
-    const caught = w.state === 'caught' && q === w.caughtP;
-    const bob = (w.state === 'play' && !caught) ? Math.abs(Math.sin(q.ph)) * 2 : 0;
-    const shake = q.oops > 0 ? Math.sin(T * 50) * 2 : 0;
-    cowboy(q.x + shake, q.y - bob, .65 * q.L.sc, q.vx < 0 ? -1 : 1, { bandit: true, L: q.L, pose: caught ? 'hands' : 'idle' });
+    const caught = w.state === 'caught' && q === w.caughtP, moving = w.state === 'play' && q.oops <= 0;
+    const bob = moving ? Math.abs(Math.sin(q.ph)) * 1.5 : 0;
+    // attrapé : il sursaute puis lève les mains ; accusé à tort : petit bond vexé
+    const hop = caught ? Math.sin(clamp01(w.t / .25) * Math.PI) * 14 : (q.oops > 0 ? Math.sin(clamp01((1.2 - q.oops) / .2) * Math.PI) * 6 : 0);
+    const shake = q.oops > 0 ? Math.sin(T * 50) * 1.5 : 0;
+    cowboy(q.x + shake, q.y - bob - hop, .65 * q.L.sc, q.vx < 0 ? -1 : 1, { bandit: true, L: q.L, seed: q.seed, walk: moving ? q.ph : null, pose: caught && w.t > .15 ? 'hands' : 'idle' });
   });
   if (w.coach) drawCoach(w.coach.x, w.coach.y, w.coach.v < 0 ? -1 : 1);
+  drawParts();
   // bulles : « C'est pas moi ! »
   w.people.forEach(q => { if (q.oops > 0) bubble(q.line, q.x, q.y - 88 * q.L.sc); });
-  if (w.state === 'caught') drawText('Pris !', w.caughtP.x, w.caughtP.y - 112, 4, C.orange, 'center');
+  if (w.state === 'caught') drawText('Pris !', Math.max(70, Math.min(W - 70, w.caughtP.x)), w.caughtP.y - 112, 4, C.orange, 'center');
   // bas : primes et record
-  drawText(w.score + ' $', 20, 664, 3, C.ink);
+  drawText(Math.round(w.disp || 0) + ' $', 20, 664, 3, C.ink);
   drawText('Attrapés : ' + w.caught, 20, 692, 2, C.mid);
   drawText('Record ' + (SAVE.best.wanted || 0) + ' $', W - 20, 670, 2, C.light, 'right');
   if (w.state === 'boom'){
@@ -892,7 +982,7 @@ cvs.addEventListener('pointerdown', e => {
 cvs.addEventListener('pointerup', e => {
   const p = toWorld(e), b = hit(p), id = pressId; pressId = null;
   if (!b || b.id !== id) return;
-  sfx.tap();
+  sfx.tap(); popAt[id] = T;
   if (id === 'resetYes') { SAVE.best = { duel: 0, wanted: 0 }; SAVE.bestBandits = { duel: 0, wanted: 0 }; save(); askReset = false; }
   else if (id === 'resetNo') askReset = false;
   else if (id === 'play') go('town');
