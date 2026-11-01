@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<title>Yiiiha !</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+/* Tout est dessiné dans le canvas : fond blanc, gris, une seule couleur vive (orange) */
+:root{color-scheme:light;--bg:#ffffff}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);overscroll-behavior:none;touch-action:none;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+</style>
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Yiiiha">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>html,body{height:100%}body{padding:0}:root{padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}</style>
+</head>
+<body>
+
+<canvas id="c" aria-label="Yiiiha !, mini-jeux du Far West"></canvas>
+<script>
+'use strict';
+// ---------- Écran : monde logique 360×720, mis à l'échelle et centré ----------
+const W = 360, H = 720;
+const cvs = document.getElementById('c'), ctx = cvs.getContext('2d');
+let scale = 1, offX = 0, offY = 0, dpr = 1;
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = innerWidth, h = innerHeight;
+  cvs.width = Math.round(w * dpr); cvs.height = Math.round(h * dpr);
+  scale = Math.min(w / W, h / H); offX = (w - W * scale) / 2; offY = (h - H * scale) / 2;
+}
+addEventListener('resize', resize); resize();
+
+// ---------- Couleurs ----------
+const C = { white:'#ffffff', ground:'#e8e8e8', faint:'#cfcfcf', light:'#bbbbbb', mid:'#999999', dark:'#555555', ink:'#333333', black:'#222222', orange:'#e8742a', orangeD:'#b85618' };
+
+// ---------- Police en blocs (5×7), dessinée pixel par pixel ----------
+const GLYPHS = {
+  A:['01110','10001','10001','11111','10001','10001','10001'], B:['11110','10001','10001','11110','10001','10001','11110'],
+  C:['01111','10000','10000','10000','10000','10000','01111'], D:['11110','10001','10001','10001','10001','10001','11110'],
+  E:['11111','10000','10000','11110','10000','10000','11111'], F:['11111','10000','10000','11110','10000','10000','10000'],
+  G:['01111','10000','10000','10011','10001','10001','01111'], H:['10001','10001','10001','11111','10001','10001','10001'],
+  I:['11111','00100','00100','00100','00100','00100','11111'], J:['00111','00010','00010','00010','00010','10010','01100'],
+  K:['10001','10010','10100','11000','10100','10010','10001'], L:['10000','10000','10000','10000','10000','10000','11111'],
+  M:['10001','11011','10101','10101','10001','10001','10001'], N:['10001','11001','10101','10011','10001','10001','10001'],
+  O:['01110','10001','10001','10001','10001','10001','01110'], P:['11110','10001','10001','11110','10000','10000','10000'],
+  Q:['01110','10001','10001','10001','10101','10010','01101'], R:['11110','10001','10001','11110','10100','10010','10001'],
+  S:['01111','10000','10000','01110','00001','00001','11110'], T:['11111','00100','00100','00100','00100','00100','00100'],
+  U:['10001','10001','10001','10001','10001','10001','01110'], V:['10001','10001','10001','10001','10001','01010','00100'],
+  W:['10001','10001','10001','10101','10101','10101','01010'], X:['10001','10001','01010','00100','01010','10001','10001'],
+  Y:['10001','10001','01010','00100','00100','00100','00100'], Z:['11111','00001','00010','00100','01000','10000','11111'],
+  0:['01110','10011','10101','10101','10101','11001','01110'], 1:['00100','01100','00100','00100','00100','00100','01110'],
+  2:['01110','10001','00001','00110','01000','10000','11111'], 3:['11110','00001','00001','01110','00001','00001','11110'],
+  4:['00010','00110','01010','10010','11111','00010','00010'], 5:['11111','10000','11110','00001','00001','10001','01110'],
+  6:['00110','01000','10000','11110','10001','10001','01110'], 7:['11111','00001','00010','00100','01000','01000','01000'],
+  8:['01110','10001','10001','01110','10001','10001','01110'], 9:['01110','10001','10001','01111','00001','00010','01100'],
+  '!':['00100','00100','00100','00100','00100','00000','00100'], '?':['01110','10001','00001','00110','00100','00000','00100'],
+  '.':['00000','00000','00000','00000','00000','00000','00100'], ',':['00000','00000','00000','00000','00000','00100','01000'],
+  "'":['00100','00100','01000','00000','00000','00000','00000'], ':':['00000','00100','00000','00000','00000','00100','00000'],
+  '-':['00000','00000','00000','01110','00000','00000','00000'], '+':['00000','00100','00100','11111','00100','00100','00000'],
+  '/':['00001','00001','00010','00100','01000','10000','10000'], '°':['01100','10010','10010','01100','00000','00000','00000'],
+  '«':['00000','00101','01010','10100','01010','00101','00000'], '»':['00000','10100','01010','00101','01010','10100','00000'],
+  ' ':['00000','00000','00000','00000','00000','00000','00000'],
+};
+// lettres accentuées : lettre de base + petit accent au-dessus (ou cédille dessous)
+const ACCENTS = { 'É':['E','acute'], 'È':['E','grave'], 'Ê':['E','circ'], 'À':['A','grave'], 'Â':['A','circ'], 'Ô':['O','circ'],
+  'Î':['I','circ'], 'Û':['U','circ'], 'Ù':['U','grave'], 'Ç':['C','ced'], 'Ñ':['N','tilde'], 'Ï':['I','trema'], 'Ë':['E','trema'] };
+const MARKS = { acute:[[2,-2],[3,-3]], grave:[[2,-3],[3,-2]], circ:[[1,-2],[2,-3],[3,-2]], tilde:[[0,-2],[1,-3],[2,-2],[3,-3],[4,-2]],
+  trema:[[1,-2],[3,-2]], ced:[[2,7],[1,8]] };
+function textW(s, px){ return s.length * 6 * px - px; }
+function drawText(s, x, y, px, col, align = 'left'){
+  s = s.toUpperCase();
+  if (align === 'center') x -= textW(s, px) / 2; else if (align === 'right') x -= textW(s, px);
+  ctx.fillStyle = col;
+  for (let i = 0; i < s.length; i++){
+    let ch = s[i], mark = null;
+    if (ACCENTS[ch]) { mark = ACCENTS[ch][1]; ch = ACCENTS[ch][0]; }
+    const g = GLYPHS[ch] || GLYPHS['?'], gx = x + i * 6 * px;
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) if (g[r][c] === '1') ctx.fillRect(gx + c * px, y + r * px, px, px);
+    if (mark) MARKS[mark].forEach(([c, r]) => ctx.fillRect(gx + c * px, y + r * px, px, px));
+  }
+}
+// texte coupé en lignes pour tenir dans une largeur
+function wrap(s, px, maxW){
+  const words = s.split(' '), lines = []; let cur = '';
+  words.forEach(w => { const t = cur ? cur + ' ' + w : w; if (textW(t, px) > maxW && cur) { lines.push(cur); cur = w; } else cur = t; });
+  if (cur) lines.push(cur); return lines;
+}
+
+// ---------- Sauvegarde ----------
+const KEY = 'yiiiha-v1';
+let SAVE = { best: { duel: 0 }, bestBandits: { duel: 0 }, music: true, sound: true };
+try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d) SAVE = Object.assign(SAVE, d, { best: Object.assign(SAVE.best, d.best), bestBandits: Object.assign(SAVE.bestBandits, d.bestBandits) }); } catch(e){}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(SAVE)); } catch(e){} }
+
+// ---------- Son : tout est synthétisé (aucun fichier) ----------
+let actx = null, sfxBus = null, musicBus = null, noiseBuf = null;
+const MUSIC_VOL = .35;
+const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
+function audioOn(){
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ return; }
+  sfxBus = actx.createGain(); sfxBus.connect(actx.destination);
+  musicBus = actx.createGain(); musicBus.gain.value = SAVE.music ? MUSIC_VOL : 0; musicBus.connect(actx.destination);
+  Music.start();
+}
+function noise(){
+  if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const s = actx.createBufferSource(); s.buffer = noiseBuf; return s;
+}
+function tone(t, f, d, v, type = 'sine', f2, bus = sfxBus){
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .008); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  o.connect(g).connect(bus); o.start(t); o.stop(t + d + .05);
+}
+function burst(t, d, v, type, freq, q = 1, bus = sfxBus){
+  const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0001, t + d); n.connect(f).connect(g).connect(bus); n.start(t); n.stop(t + d + .02);
+}
+const canSfx = () => SAVE.sound && actx;
+const sfx = {
+  // la cloche du duel : ding clair avec harmoniques de cloche
+  bell(){ if (!canSfx()) return; const t = actx.currentTime; [[1, .09], [2.76, .04], [5.4, .02], [.5, .03]].forEach(([k, v]) => tone(t, 1046 * k, 1.6, v)); tone(t + .32, 1046, 1.2, .06); tone(t + .32, 2887, .9, .025); },
+  // coup de revolver : claquement sec puis écho
+  bang(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .25, .5, 'lowpass', 1800, .7); tone(t, 140, .18, .25, 'square', 50); burst(t + .12, .5, .08, 'lowpass', 700, .5); },
+  // le bandit tire sur toi
+  bangFar(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .3, .35, 'lowpass', 1100, .7); tone(t, 110, .2, .18, 'square', 45); },
+  // ricochet « piou »
+  ricochet(){ if (!canSfx()) return; tone(actx.currentTime, 2400, .35, .05, 'sine', 700); },
+  // chapeau qui s'envole
+  whoosh(){ if (!canSfx()) return; const t = actx.currentTime; const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(); f.type = 'bandpass'; f.Q.value = 2; f.frequency.setValueAtTime(400, t); f.frequency.exponentialRampToValueAtTime(2200, t + .35); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.12, t + .1); g.gain.exponentialRampToValueAtTime(.0001, t + .4); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + .45); },
+  // revolver qui tournoie puis retourne dans le holster
+  twirl(){ if (!canSfx()) return; const t = actx.currentTime; for (let i = 0; i < 5; i++) burst(t + i * .07, .04, .05, 'bandpass', 3000 + i * 300, 3); tone(t + .42, 900, .06, .06, 'square'); burst(t + .42, .05, .1, 'highpass', 2500); },
+  // le bandit ricane
+  laugh(){ if (!canSfx()) return; const t = actx.currentTime; [0, .14, .28, .42].forEach((d, i) => tone(t + d, 330 - i * 25, .12, .07, 'sawtooth', 260 - i * 25)); },
+  // fausses alertes
+  fly(){ if (!canSfx()) return; const t = actx.currentTime; const o = actx.createOscillator(), g = actx.createGain(), l = actx.createOscillator(), lg = actx.createGain(); o.type = 'sawtooth'; o.frequency.value = 210; l.frequency.value = 9; lg.gain.value = 25; l.connect(lg).connect(o.frequency); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.03, t + .2); g.gain.setValueAtTime(.03, t + 1.2); g.gain.exponentialRampToValueAtTime(.0001, t + 1.6); o.connect(g).connect(sfxBus); o.start(t); l.start(t); o.stop(t + 1.7); l.stop(t + 1.7); },
+  cluck(){ if (!canSfx()) return; const t = actx.currentTime; [0, .16, .3].forEach((d, i) => tone(t + d, i === 2 ? 900 : 700, i === 2 ? .2 : .08, .06, 'square', i === 2 ? 600 : 500)); },
+  tumble(){ if (!canSfx()) return; const t = actx.currentTime; for (let i = 0; i < 8; i++) burst(t + i * .17, .09, .05, 'bandpass', 900, 1.5); },
+  tap(){ if (!canSfx()) return; tone(actx.currentTime, 660, .06, .05, 'triangle'); },
+  sting(){ if (!canSfx()) return; const t = actx.currentTime; [57, 60, 64].forEach((m, i) => tone(t + i * .09, midiHz(m + 12), .3, .05, 'triangle')); tone(t + .3, midiHz(81), .6, .06, 'triangle'); },
+  lose(){ if (!canSfx()) return; const t = actx.currentTime; [64, 63, 62].forEach((m, i) => tone(t + i * .22, midiHz(m), .25, .06, 'triangle')); tone(t + .66, midiHz(61), .8, .06, 'triangle', midiHz(55)); },
+};
+
+// ---------- Musique western, en boucle, coupable dans le menu ----------
+// mélodie sifflée originale en la mineur, guitare qui galope dessous
+const Music = (() => {
+  const BPM = 104, STEP = 60 / BPM / 2;          // croches
+  const MEL = [69,null,72,74, 76,null,null,null, 74,72,69,null, 67,null,null,null,
+               69,null,72,74, 76,null,79,76, 74,null,72,null, 69,null,null,null,
+               74,null,74,76, 77,null,76,74, 72,null,69,null, 72,74,76,null,
+               76,null,74,72, 69,null,67,null, 69,null,null,null, null,null,null,null];
+  const ROOTS = [45,45,45,40, 45,45,43,45, 50,50,45,45, 40,40,45,45];   // une basse par demi-mesure
+  let step = 0, next = 0, timer = null, mode = 'town';
+  function whistle(t, m, d){
+    const o = actx.createOscillator(), g = actx.createGain(), l = actx.createOscillator(), lg = actx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(midiHz(m) * .97, t); o.frequency.exponentialRampToValueAtTime(midiHz(m), t + .05);
+    l.frequency.value = 5.5; lg.gain.value = midiHz(m) * .012; l.connect(lg).connect(o.frequency);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.13, t + .03); g.gain.setValueAtTime(.12, t + d * .7); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+    o.connect(g).connect(musicBus); o.start(t); l.start(t); o.stop(t + d + .05); l.stop(t + d + .05);
+  }
+  function pluck(t, m, v){
+    const g = actx.createGain(), f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(2600, t); f.frequency.exponentialRampToValueAtTime(500, t + .25);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + .3);
+    f.connect(g).connect(musicBus);
+    const o = actx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = midiHz(m); o.connect(f); o.start(t); o.stop(t + .32);
+  }
+  function tick(){
+    if (!actx) return;
+    while (next < actx.currentTime + .25){
+      const t = next, s = step % 64;
+      if (mode === 'town'){
+        const root = ROOTS[Math.floor(s / 4)];
+        // galop : boum - ta-ta
+        if (s % 4 === 0) pluck(t, root, .16);
+        if (s % 4 === 2) { pluck(t, root + 7, .1); }
+        if (s % 4 === 3) { pluck(t, root + 12, .06); }
+        if (s % 2 === 1) burst(t, .05, .025, 'highpass', 6000, 1, musicBus);
+        const m = MEL[s]; if (m) { let d = 1; while (s + d < 64 && MEL[s + d] === null && d < 4) d++; whistle(t, m, d * STEP * .95); }
+      } else if (mode === 'duel'){
+        // tension : basse grave qui bat comme un cœur
+        if (s % 8 === 0) pluck(t, 33, .2);
+        if (s % 8 === 2) pluck(t, 33, .1);
+        if (s % 32 === 28) pluck(t, 44, .07);
+      }
+      next += STEP; step++;
+    }
+  }
+  return {
+    start(){ next = actx.currentTime + .1; step = 0; if (!timer) timer = setInterval(tick, 80); },
+    set(m){ if (mode !== m) { mode = m; if (actx) { step = 0; next = Math.max(next, actx.currentTime + .05); } } },
+    volume(){ if (musicBus) musicBus.gain.setTargetAtTime(SAVE.music ? MUSIC_VOL : 0, actx.currentTime, .1); },
+  };
+})();
+// vent du désert pendant l'attente du duel
+let windNode = null;
+function wind(on){
+  if (!actx) return;
+  if (on && !windNode && SAVE.sound){
+    const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(); n.loop = true; f.type = 'bandpass'; f.frequency.value = 500; f.Q.value = .6;
+    g.gain.value = .0001; g.gain.setTargetAtTime(.05, actx.currentTime, .4); n.connect(f).connect(g).connect(sfxBus); n.start(); windNode = { n, g };
+  } else if (!on && windNode){ const w = windNode; windNode = null; w.g.gain.setTargetAtTime(.0001, actx.currentTime, .15); setTimeout(() => { try { w.n.stop(); } catch(e){} }, 600); }
+}
+
+// ---------- Dessin : le cow-boy en blocs ----------
+// (x, y) = pieds ; dir 1 = regarde à droite ; opts.bandit, opts.pose ('idle' | 'aim' | 'twirl'), opts.hat (false = chapeau envolé)
+function cowboy(x, y, s, dir, opts = {}){
+  const bandit = !!opts.bandit, hatCol = bandit ? C.black : C.dark;
+  ctx.save(); ctx.translate(x, y); if (opts.rot) ctx.rotate(opts.rot); ctx.scale(s * dir, s);
+  const r = (a, b, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(a, b, w, h); };
+  // jambes, bottes
+  r(-9, -30, 7, 30, C.light); r(2, -30, 7, 30, C.light);
+  r(-11, -6, 9, 6, C.dark); r(2, -6, 9, 6, C.dark);
+  // holster sur la hanche
+  r(18, -38, 9, 20, C.dark);
+  if (opts.pose !== 'aim' && opts.pose !== 'twirl') r(19, -48, 7, 11, '#777');
+  // poncho
+  ctx.fillStyle = bandit ? '#7a7a7a' : C.mid;
+  ctx.beginPath(); ctx.moveTo(-24, -34); ctx.lineTo(-14, -74); ctx.lineTo(14, -74); ctx.lineTo(24, -34); ctx.fill();
+  ctx.fillStyle = bandit ? C.dark : C.light;
+  ctx.beginPath(); ctx.moveTo(-14, -74); ctx.lineTo(14, -74); ctx.lineTo(0, -56); ctx.fill();
+  // tête, moustache (ou foulard du bandit)
+  r(-12, -96, 24, 22, '#d6d6d6');
+  if (bandit) { r(-12, -86, 24, 12, C.ink); r(-6, -91, 4, 3, C.ink); r(4, -91, 4, 3, C.ink); }
+  else { r(-10, -84, 20, 5, C.dark); r(-6, -91, 3, 3, C.ink); r(4, -91, 3, 3, C.ink); }
+  if (opts.hat !== false) hat(0, -96, 1, hatCol);
+  // bras et revolver
+  if (opts.pose === 'aim'){
+    r(14, -66, 30, 8, C.mid);
+    revolver(44, -66, 1, opts.flash);
+  } else if (opts.pose === 'twirl'){
+    r(14, -66, 22, 8, C.mid);
+    ctx.save(); ctx.translate(40, -62); ctx.rotate(opts.spin || 0); revolver(-4, 0, .9); ctx.restore();
+  }
+  ctx.restore();
+}
+// chapeau de cow-boy : bord aux côtés relevés + calotte creusée ; (x, y) = dessous du bord
+function hat(x, y, s, col, band){
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col;
+  ctx.fillRect(-24, -6, 48, 6); ctx.fillRect(-28, -12, 6, 8); ctx.fillRect(22, -12, 6, 8);
+  ctx.beginPath(); ctx.moveTo(-13, -6); ctx.lineTo(-13, -24); ctx.lineTo(-4, -24); ctx.lineTo(-4, -20); ctx.lineTo(4, -20); ctx.lineTo(4, -24); ctx.lineTo(13, -24); ctx.lineTo(13, -6); ctx.fill();
+  if (band) { ctx.fillStyle = band; ctx.fillRect(-13, -11, 26, 5); }
+  ctx.restore();
+}
+// revolver en deux blocs : canon + crosse ; (x, y) = main
+function revolver(x, y, s, flash){
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = C.ink; ctx.fillRect(0, -4, 24, 7);
+  ctx.save(); ctx.translate(2, 2); ctx.rotate(-.26); ctx.fillStyle = '#777'; ctx.fillRect(-2, 0, 8, 14); ctx.restore();
+  if (flash){ ctx.fillStyle = C.orange; ctx.beginPath(); ctx.moveTo(26, -1); ctx.lineTo(34, -8); ctx.lineTo(31, -2); ctx.lineTo(42, -1); ctx.lineTo(31, 1); ctx.lineTo(34, 6); ctx.fill(); }
+  ctx.restore();
+}
+// la cloche du duel, pendue à sa potence
+function bellPost(cx, top, swing, lit){
+  ctx.fillStyle = C.faint; ctx.fillRect(cx - 50, top, 100, 7); ctx.fillRect(cx - 50, top, 7, 60); ctx.fillRect(cx + 43, top, 7, 60);
+  ctx.fillRect(cx - 3, top + 7, 6, 10);
+  ctx.save(); ctx.translate(cx, top + 17); ctx.rotate(swing);
+  ctx.fillStyle = lit ? C.orange : C.mid;
+  ctx.beginPath(); ctx.moveTo(-18, 34); ctx.lineTo(-14, 6); ctx.lineTo(-8, 0); ctx.lineTo(8, 0); ctx.lineTo(14, 6); ctx.lineTo(18, 34); ctx.fill();
+  ctx.fillRect(-22, 32, 44, 5);
+  ctx.fillStyle = lit ? C.orangeD : C.dark; ctx.fillRect(-4, 37, 8, 7);
+  ctx.restore();
+  if (lit){
+    ctx.fillStyle = C.orange; const k = 1 + Math.abs(swing) * 2;
+    [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([sx, sy]) => { for (let i = 0; i < 3; i++) ctx.fillRect(cx + sx * (34 + i * 5 * k), top + 34 + sy * (6 + i * 4), 4, 4); });
+  }
+}
+
+// ---------- Interface : boutons en blocs ----------
+let buttons = [];
+function button(id, x, y, w, h, label, opts = {}){
+  const pressed = pressId === id;
+  ctx.fillStyle = opts.off ? C.ground : (opts.main ? C.orange : C.white);
+  ctx.fillRect(x, y + (pressed ? 3 : 0), w, h);
+  ctx.fillStyle = opts.off ? C.faint : (opts.main ? C.orangeD : C.ink);
+  ctx.fillRect(x, y + h + (pressed ? 0 : 0), w, pressed ? 0 : 4);
+  if (!opts.main && !opts.off){ ctx.fillStyle = C.ink; ctx.fillRect(x, y + (pressed ? 3 : 0), w, 3); ctx.fillRect(x, y + (pressed ? 3 : 0), 3, h); ctx.fillRect(x + w - 3, y + (pressed ? 3 : 0), 3, h); }
+  drawText(label, x + w / 2, y + h / 2 - 7 + (pressed ? 3 : 0), 2, opts.off ? C.light : (opts.main ? C.white : C.ink), 'center');
+  if (!opts.off) buttons.push({ id, x, y, w, h: h + 4 });
+}
+
+// ---------- Les bandits du duel (textes à valider) ----------
+const BANDITS = [
+  { name: 'Joe la Fouine',        line: "T'es pas assez rapide, gamin." },
+  { name: 'Billy Deux-Gâchettes', line: "J'ai deux pistolets. Toi, un seul." },
+  { name: 'Mamie Winchester',     line: "J'ai tricoté plus vite que toi." },
+  { name: 'Le Kid Boudeur',       line: 'Je voulais même pas venir.' },
+  { name: 'Señor Siesta',         line: 'Réveille-moi quand ça sonne.' },
+  { name: 'Gros Bill',            line: 'Mon chapeau est plus grand que le tien.' },
+  { name: 'Doc Tremblote',        line: 'Mes mains tremblent... ou pas.' },
+  { name: 'Le Baron du Cactus',   line: "Aïe. Je me suis assis dessus." },
+];
+const banditFor = n => { const b = BANDITS[(n - 1) % BANDITS.length], lap = Math.floor((n - 1) / BANDITS.length); return { name: b.name + (lap ? ' ' + 'I'.repeat(lap + 1) : ''), line: b.line }; };
+// temps de réaction du bandit, en secondes : de plus en plus rapide
+const banditTime = n => Math.max(.2, .62 - .045 * (n - 1)) + (Math.random() * .06 - .03);
+
+// ---------- Scènes ----------
+let scene = 'title', T = 0, pressId = null;
+const duel = { n: 1, score: 0, state: 'intro', t: 0, waitFor: 0, rt: 0, my: 0, fake: null, fakeAt: 0, fall: 0, hatFly: null, early: false, newBest: false, points: 0 };
+let titleTaps = 0, titleTapT = 0;
+
+function go(s){
+  scene = s; pressId = null;
+  if (s === 'duel') { Music.set('duel'); startDuelRun(); } else { Music.set('town'); wind(false); }
+}
+function startDuelRun(){ duel.n = 1; duel.score = 0; duel.newBest = false; newRound(); }
+function newRound(){
+  Object.assign(duel, { state: 'intro', t: 0, rt: banditTime(duel.n), my: 0, fake: null, fall: 0, hatFly: null, early: false, points: 0, myHatFly: null });
+  duel.bandit = banditFor(duel.n);
+  duel.waitFor = 1.6 + Math.random() * 2.6;
+  // fausses alertes à partir du 3e bandit
+  if (duel.n >= 3 && Math.random() < .55){ duel.fake = ['mouche', 'poule', 'boule'][Math.floor(Math.random() * 3)]; duel.fakeAt = .5 + Math.random() * (duel.waitFor - 1); duel.fakeOn = false; }
+  sfx.sting();
+}
+
+function update(dt){
+  T += dt;
+  if (scene !== 'duel') return;
+  const d = duel; d.t += dt;
+  if (d.state === 'intro' && d.t > 2.2){ d.state = 'wait'; d.t = 0; wind(true); }
+  else if (d.state === 'wait'){
+    if (d.fake && !d.fakeOn && d.t > d.fakeAt){ d.fakeOn = true; d.fakeT = 0; ({ mouche: sfx.fly, poule: sfx.cluck, boule: sfx.tumble })[d.fake](); }
+    if (d.fakeOn) d.fakeT += dt;
+    if (d.t > d.waitFor){ d.state = 'go'; d.t = 0; wind(false); sfx.bell(); }
+  }
+  else if (d.state === 'go' && d.t > d.rt){
+    // trop lent : le bandit tire le premier
+    d.state = 'lost'; d.t = 0; sfx.bangFar(); setTimeout(sfx.whoosh, 120); d.myHatFly = { x: 100, y: 424, vx: -30, vy: -260, a: 0 };
+  }
+  else if (d.state === 'won'){
+    if (d.hatFly){ const h = d.hatFly; h.vy += 700 * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.a += 6 * dt; if (h.y > 520) { h.y = 520; h.vy = 0; h.vx = 0; } }
+    if (d.t > 2.4){ d.n++; newRound(); }
+  }
+  else if (d.state === 'lost'){
+    if (d.myHatFly){ const h = d.myHatFly; h.vy += 700 * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.a -= 6 * dt; if (h.y > 520) { h.y = 520; h.vy = 0; h.vx = 0; } }
+    if (d.t > 2.2){ endRun(); }
+  }
+}
+function endRun(){
+  const d = duel, won = d.n - 1;
+  if (d.score > SAVE.best.duel){ SAVE.best.duel = d.score; d.newBest = d.score > 0; }
+  if (won > SAVE.bestBandits.duel) SAVE.bestBandits.duel = won;
+  save(); d.state = 'over'; d.t = 0; sfx.lose();
+}
+function shoot(){
+  const d = duel;
+  if (d.state === 'wait'){
+    // trop tôt !
+    d.state = 'lost'; d.t = 0; d.early = true; wind(false); sfx.ricochet(); setTimeout(sfx.laugh, 250);
+  } else if (d.state === 'go'){
+    d.my = d.t; d.state = 'won'; d.t = 0;
+    d.points = Math.max(50, Math.round(1000 - d.my * 1000)) ;
+    d.score += d.points;
+    sfx.bang(); setTimeout(sfx.whoosh, 100); setTimeout(sfx.twirl, 1200);
+    d.hatFly = { x: 260, y: 424, vx: 35, vy: -330, a: 0 };
+  }
+}
+
+// ---------- Rendu des scènes ----------
+function drawTitle(){
+  // logo : chapeau orange au-dessus du nom
+  const bob = Math.sin(T * 2) * 3;
+  hat(180, 230 + bob, 3.2, C.ink, C.orange);
+  const x0 = 180 - textW('YIIIHA!', 7) / 2, bang = x0 + 6 * 6 * 7;
+  drawText('YIIIHA', x0 + 4, 262, 7, C.faint); drawText('!', bang + 4, 262, 7, C.orangeD);
+  drawText('YIIIHA', x0, 258, 7, C.ink); drawText('!', bang, 258, 7, C.orange);
+  drawText('Mini-jeux du Far West', 180, 330, 2, C.mid, 'center');
+  ctx.fillStyle = C.ground; ctx.fillRect(0, 520, W, 5);
+  cowboy(110, 520, .9, 1, {});
+  cowboy(250, 520, .9, -1, { bandit: true });
+  button('play', 90, 560, 180, 52, 'Jouer', { main: true });
+  button('music', 22, 640, 152, 40, 'Musique ' + (SAVE.music ? 'oui' : 'non'));
+  button('sound', 186, 640, 152, 40, 'Bruits ' + (SAVE.sound ? 'oui' : 'non'));
+}
+const GAMES = [
+  { id: 'duel', name: 'Duel de Midi', open: true },
+  { id: 'cans', name: 'Boîtes de conserve' },
+  { id: 'lasso', name: 'Le Lasso' },
+  { id: 'coach', name: 'La Diligence' },
+  { id: 'saloon', name: 'Le Saloon' },
+  { id: 'wanted', name: 'Avis de recherche' },
+];
+function drawTown(){
+  drawText('La ville', 180, 60, 4, C.ink, 'center');
+  hat(180, 48, 1, C.orange);
+  GAMES.forEach((g, i) => {
+    const y = 120 + i * 88, px = textW(g.name, 3) > 260 ? 2 : 3, ny = y + (px === 3 ? 18 : 22);
+    if (g.open){
+      button('g-' + g.id, 30, y, 300, 70, '', {});
+      drawText(g.name, 50, ny, px, C.ink);
+      const b = SAVE.best[g.id] || 0;
+      drawText(b ? 'Record : ' + b : 'Pas encore joué', 50, y + 46, 2, C.mid);
+    } else {
+      button('lock-' + g.id, 30, y, 300, 70, '', { off: true });
+      drawText(g.name, 50, ny, px, C.light);
+      drawText('Bientôt', 50, y + 46, 2, C.faint);
+    }
+  });
+  button('back', 30, 655, 120, 40, 'Retour');
+}
+function drawDuel(){
+  const d = duel;
+  // haut : numéro du bandit et score
+  drawText('Bandit n°' + d.n, 24, 28, 2, C.mid);
+  drawText(String(d.score), W - 24, 22, 4, C.ink, 'right');
+  drawText('Record ' + SAVE.best.duel, W - 24, 56, 2, C.light, 'right');
+  // cloche
+  const lit = d.state === 'go' || (d.state === 'won' && d.t < .8);
+  const swing = lit ? Math.sin(T * 18) * .35 * (d.state === 'won' ? Math.max(0, 1 - d.t / .8) : 1) : 0;
+  bellPost(180, 120, swing, lit);
+  // sol
+  ctx.fillStyle = C.ground; ctx.fillRect(0, 520, W, 5);
+  // fausses alertes
+  if (d.state === 'wait' && d.fakeOn) drawFake(d.fake, d.fakeT);
+  // le héros (gauche)
+  const heroPose = d.state === 'won' ? (d.t < 1.2 ? 'aim' : (d.t < 1.7 ? 'twirl' : 'idle')) : 'idle';
+  if (d.state === 'lost' && !d.early || (d.state === 'over' && !d.early)){
+    const k = d.state === 'over' ? 1 : Math.min(1, d.t / .35);
+    cowboy(90 + k * 50, 520 - Math.sin(k * Math.PI) * 30, 1.1, 1, { rot: -k * Math.PI / 2, hat: false });
+    if (d.myHatFly) hat(d.myHatFly.x, d.myHatFly.y, 1.1, C.dark);
+  } else {
+    cowboy(90, 520, 1.1, 1, { pose: heroPose, flash: d.state === 'won' && d.t < .12, spin: (d.t - 1.2) * 28 });
+  }
+  // le bandit (droite)
+  if (d.state === 'won'){
+    const k = Math.min(1, d.t / .35);
+    // il part à la renverse en reculant, pour rester dans l'écran
+    cowboy(270 - k * 50, 520 - Math.sin(k * Math.PI) * 30, 1.1, -1, { bandit: true, rot: k * Math.PI / 2, hat: false });
+    if (d.hatFly) { ctx.save(); ctx.translate(d.hatFly.x, d.hatFly.y); ctx.rotate(d.hatFly.a); hat(0, 0, 1.1, C.black); ctx.restore(); }
+    if (d.t < .25){ ctx.fillStyle = C.orange; for (let x = 150; x < 240; x += 12) ctx.fillRect(x, 445, 6, 2); }
+  } else if (d.state === 'lost' && !d.early || (d.state === 'over' && !d.early)){
+    cowboy(270, 520, 1.1, -1, { bandit: true, pose: 'aim', flash: d.state === 'lost' && d.t < .12 });
+  } else {
+    const shake = d.state === 'lost' && d.early ? Math.sin(T * 40) * 2 : 0;
+    cowboy(270 + shake, 520, 1.1, -1, { bandit: true });
+  }
+  // bas : messages
+  const mx = 180, my = 580;
+  if (d.state === 'intro'){
+    drawText(d.bandit.name, mx, my, 3, C.ink, 'center');
+    wrap('« ' + d.bandit.line + ' »', 2, 320).forEach((l, i) => drawText(l, mx, my + 34 + i * 20, 2, C.mid, 'center'));
+  } else if (d.state === 'wait'){
+    drawText('Attends la cloche...', mx, my + 10, 2, C.mid, 'center');
+  } else if (d.state === 'go'){
+    drawText('Tire !', mx, my, 6, C.orange, 'center');
+  } else if (d.state === 'won'){
+    drawText('Touché !', mx, my, 4, C.ink, 'center');
+    drawText(d.my.toFixed(2).replace('.', ',') + ' s', mx, my + 40, 2, C.mid, 'center');
+    drawText('+' + d.points, mx, my + 64, 3, C.orange, 'center');
+  } else if (d.state === 'lost'){
+    drawText(d.early ? 'Trop tôt !' : 'Trop lent !', mx, my, 4, C.ink, 'center');
+    drawText(d.early ? 'Le bandit rigole.' : 'Le bandit a été plus rapide.', mx, my + 40, 2, C.mid, 'center');
+  } else if (d.state === 'over') drawOver();
+}
+function drawFake(kind, t){
+  if (kind === 'mouche'){
+    const x = 40 + t * 180, y = 330 + Math.sin(t * 14) * 25 + Math.cos(t * 9) * 10;
+    ctx.fillStyle = C.ink; ctx.fillRect(x, y, 6, 5); ctx.fillStyle = C.faint; ctx.fillRect(x + 1, y - 4, 3, 4 + (Math.floor(t * 30) % 2) * 2);
+  } else if (kind === 'poule'){
+    const x = W + 20 - t * 220, y = 520, hop = Math.abs(Math.sin(t * 14)) * 5;
+    ctx.fillStyle = C.light; ctx.fillRect(x - 10, y - 20 - hop, 20, 14); ctx.fillRect(x - 14, y - 30 - hop, 9, 11);
+    ctx.fillStyle = C.orange; ctx.fillRect(x - 18, y - 26 - hop, 4, 3); ctx.fillRect(x - 12, y - 34 - hop, 5, 4);
+    ctx.fillStyle = C.dark; ctx.fillRect(x - 4, y - 6 - hop, 2, 6 + hop); ctx.fillRect(x + 3, y - 6 - hop, 2, 6 + hop);
+  } else {
+    const x = -30 + t * 180, y = 500 - Math.abs(Math.sin(t * 6)) * 18;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * 7); ctx.strokeStyle = C.mid; ctx.lineWidth = 3; ctx.strokeRect(-12, -12, 24, 24); ctx.strokeRect(-7, -7, 14, 14); ctx.restore();
+  }
+}
+function drawOver(){
+  const d = duel;
+  ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.fillRect(0, 0, W, H);
+  drawText('Fin du duel', 180, 150, 4, C.ink, 'center');
+  hat(180, 135, 1, C.orange);
+  const won = d.n - 1;
+  drawText('Bandits battus : ' + won, 180, 230, 2, C.mid, 'center');
+  drawText(String(d.score), 180, 270, 7, C.ink, 'center');
+  drawText('Record : ' + SAVE.best.duel, 180, 340, 2, C.mid, 'center');
+  if (d.newBest && Math.floor(T * 3) % 2 === 0) drawText('Nouveau record !', 180, 380, 3, C.orange, 'center');
+  button('again', 70, 460, 220, 56, 'Rejouer', { main: true });
+  button('town', 70, 540, 220, 48, 'La ville');
+}
+
+function draw(){
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = C.white; ctx.fillRect(0, 0, cvs.width, cvs.height);
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
+  buttons = [];
+  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else drawDuel();
+  if (askReset) { buttons = []; drawReset(); }
+}
+
+// ---------- Toucher ----------
+function toWorld(e){ return { x: (e.clientX - offX) / scale, y: (e.clientY - offY) / scale }; }
+const hit = p => buttons.find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+cvs.addEventListener('pointerdown', e => {
+  e.preventDefault(); audioOn();
+  const p = toWorld(e);
+  // en duel, toucher n'importe où = tirer (le plus vite possible, dès l'appui)
+  if (scene === 'duel' && (duel.state === 'wait' || duel.state === 'go')) { shoot(); return; }
+  const b = hit(p); pressId = b ? b.id : null;
+  // mode test caché : toucher 5 fois le logo
+  if (scene === 'title' && !askReset && p.y > 150 && p.y < 320){ const n = performance.now(); titleTaps = n - titleTapT < 600 ? titleTaps + 1 : 1; titleTapT = n; if (titleTaps >= 5) { titleTaps = 0; testMode(); } }
+});
+cvs.addEventListener('pointerup', e => {
+  const p = toWorld(e), b = hit(p), id = pressId; pressId = null;
+  if (!b || b.id !== id) return;
+  sfx.tap();
+  if (id === 'resetYes') { SAVE.best = { duel: 0 }; SAVE.bestBandits = { duel: 0 }; save(); askReset = false; }
+  else if (id === 'resetNo') askReset = false;
+  else if (id === 'play') go('town');
+  else if (id === 'music') { SAVE.music = !SAVE.music; save(); Music.volume(); }
+  else if (id === 'sound') { SAVE.sound = !SAVE.sound; save(); }
+  else if (id === 'back' || id === 'town') go(id === 'back' ? 'title' : 'town');
+  else if (id === 'g-duel' || id === 'again') go('duel');
+});
+cvs.addEventListener('pointercancel', () => { pressId = null; });
+// mode test : propose d'effacer les records (pour tester depuis zéro), confirmé dans le jeu
+let askReset = false;
+function testMode(){ askReset = true; }
+function drawReset(){
+  ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.fillRect(0, 0, W, H);
+  drawText('Mode test', 180, 250, 4, C.orange, 'center');
+  drawText('Effacer les records ?', 180, 300, 2, C.ink, 'center');
+  button('resetYes', 40, 360, 130, 48, 'Effacer', { main: true });
+  button('resetNo', 190, 360, 130, 48, 'Annuler');
+}
+
+// ---------- Boucle ----------
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  update(dt); draw(); requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+document.addEventListener('visibilitychange', () => { if (document.hidden && actx) actx.suspend(); else if (actx && !document.hidden) actx.resume(); });
+</script>
+
+<script>
+// fonctionne aussi sans connexion une fois ouvert une première fois
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+</body>
+</html>
