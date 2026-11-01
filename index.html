@@ -666,7 +666,11 @@ function drawBoard(){
   drawText('Classement', 180, 50, 4, C.ink, 'center');
   hat(180, 40, 1, C.orange);
   drawText('Duel de Midi', 180, 92, 2, C.mid, 'center');
-  const rows = (lbData && lbData.duel) || [];
+  // même pseudo = même joueur (ex. Safari et l'icône de l'écran d'accueil) : on garde son meilleur score ;
+  // ceux qui n'ont pas encore marqué de points n'apparaissent pas
+  const best = {};
+  ((lbData && lbData.duel) || []).forEach(r => { if (r.duel > 0 && (!best[r.name] || r.duel > best[r.name].duel)) best[r.name] = r; });
+  const rows = Object.values(best).sort((a, b) => b.duel - a.duel);
   if (lbState === 'load') drawText('Chargement...', 180, 300, 2, C.mid, 'center');
   else if (lbState === 'err') { drawText('Pas de connexion.', 180, 290, 2, C.mid, 'center'); drawText('Réessaie plus tard.', 180, 314, 2, C.mid, 'center'); }
   else if (!rows.length) drawText("Personne n'a encore joué.", 180, 300, 2, C.mid, 'center');
