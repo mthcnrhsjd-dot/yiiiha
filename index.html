@@ -11,6 +11,10 @@
 html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);overscroll-behavior:none;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#pseudo{position:fixed;box-sizing:border-box;border:3px solid #333;border-radius:0;background:#fff;color:#333;
+  font:700 20px/1 "Courier New",ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;text-align:center;
+  padding:0 8px;outline:none;-webkit-user-select:text;user-select:text;touch-action:manipulation}
+#pseudo:focus{border-color:#e8742a}
 </style>
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Yiiiha">
@@ -23,6 +27,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);overscroll-b
 <body>
 
 <canvas id="c" aria-label="Yiiiha !, mini-jeux du Far West"></canvas>
+<input id="pseudo" hidden maxlength="12" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" aria-label="Ton pseudo">
 <script>
 'use strict';
 // ---------- Écran : monde logique 360×720, mis à l'échelle et centré ----------
@@ -317,11 +322,16 @@ const banditTime = n => Math.max(.2, .62 - .045 * (n - 1)) + (Math.random() * .0
 
 // ---------- Scènes ----------
 let scene = 'title', T = 0, pressId = null;
+// identifiant au hasard, propre à ce téléphone : sert seulement au classement
+if (!SAVE.id) { SAVE.id = Array.from({ length: 16 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join(''); save(); }
+// au premier lancement, on choisit d'abord son pseudo
+if (!SAVE.name) scene = 'name';
 const duel = { n: 1, score: 0, state: 'intro', t: 0, waitFor: 0, rt: 0, my: 0, fake: null, fakeAt: 0, fall: 0, hatFly: null, early: false, newBest: false, points: 0 };
 let titleTaps = 0, titleTapT = 0;
 
 function go(s){
   scene = s; pressId = null;
+  if (s === 'board') lbLoad();
   if (s === 'duel') { Music.set('duel'); startDuelRun(); } else { Music.set('town'); wind(false); }
 }
 function startDuelRun(){ duel.n = 1; duel.score = 0; duel.newBest = false; newRound(); }
@@ -361,7 +371,7 @@ function endRun(){
   const d = duel, won = d.n - 1;
   if (d.score > SAVE.best.duel){ SAVE.best.duel = d.score; d.newBest = d.score > 0; }
   if (won > SAVE.bestBandits.duel) SAVE.bestBandits.duel = won;
-  save(); d.state = 'over'; d.t = 0; sfx.lose();
+  save(); d.state = 'over'; d.t = 0; sfx.lose(); lbSend();
 }
 function shoot(){
   const d = duel;
@@ -389,7 +399,9 @@ function drawTitle(){
   ctx.fillStyle = C.ground; ctx.fillRect(0, 520, W, 5);
   cowboy(110, 520, .9, 1, {});
   cowboy(250, 520, .9, -1, { bandit: true });
-  button('play', 90, 560, 180, 52, 'Jouer', { main: true });
+  drawText('Salut ' + SAVE.name + ' !', 180, 365, 2, C.ink, 'center');
+  button('play', 22, 560, 152, 52, 'Jouer', { main: true });
+  button('board', 186, 560, 152, 52, 'Classement');
   button('music', 22, 640, 152, 40, 'Musique ' + (SAVE.music ? 'oui' : 'non'));
   button('sound', 186, 640, 152, 40, 'Bruits ' + (SAVE.sound ? 'oui' : 'non'));
 }
@@ -499,8 +511,9 @@ function drawOver(){
   drawText(String(d.score), 180, 270, 7, C.ink, 'center');
   drawText('Record : ' + SAVE.best.duel, 180, 340, 2, C.mid, 'center');
   if (d.newBest && Math.floor(T * 3) % 2 === 0) drawText('Nouveau record !', 180, 380, 3, C.orange, 'center');
-  button('again', 70, 460, 220, 56, 'Rejouer', { main: true });
-  button('town', 70, 540, 220, 48, 'La ville');
+  button('again', 70, 440, 220, 56, 'Rejouer', { main: true });
+  button('board', 70, 516, 220, 48, 'Classement');
+  button('town', 70, 584, 220, 48, 'La ville');
 }
 
 function draw(){
@@ -508,8 +521,76 @@ function draw(){
   ctx.fillStyle = C.white; ctx.fillRect(0, 0, cvs.width, cvs.height);
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
   buttons = [];
-  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else drawDuel();
+  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else drawDuel();
+  placePseudo();
   if (askReset) { buttons = []; drawReset(); }
+}
+
+// ---------- Pseudo (choisi une seule fois, au premier lancement) ----------
+const pseudoEl = document.getElementById('pseudo');
+let nameErr = '';
+// on ne garde que les lettres que la police du jeu sait dessiner
+const cleanName = v => v.toUpperCase().replace(/[^A-Z0-9ÉÈÊÀÂÔÎÛÙÇÑÏË -]/g, '').replace(/\s+/g, ' ').slice(0, 12);
+pseudoEl.addEventListener('input', () => { const c = cleanName(pseudoEl.value); if (c !== pseudoEl.value) pseudoEl.value = c; nameErr = ''; });
+pseudoEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); nameOk(); } });
+function nameOk(){
+  const n = cleanName(pseudoEl.value).trim();
+  if (n.length < 2) { nameErr = '2 lettres minimum.'; return; }
+  SAVE.name = n; save(); pseudoEl.blur(); go('title'); lbSend();
+}
+function placePseudo(){
+  const on = scene === 'name' && !askReset;
+  if (pseudoEl.hidden === on) pseudoEl.hidden = !on;
+  if (!on) return;
+  const st = pseudoEl.style;
+  st.left = (offX + 50 * scale) + 'px'; st.top = (offY + 350 * scale) + 'px';
+  st.width = (260 * scale) + 'px'; st.height = (56 * scale) + 'px';
+}
+function drawName(){
+  hat(180, 150 + Math.sin(T * 2) * 3, 2, C.ink, C.orange);
+  drawText('Ton pseudo', 180, 200, 4, C.ink, 'center');
+  wrap('Il sert pour le classement entre amis. Tu le choisis une seule fois.', 2, 300).forEach((l, i) => drawText(l, 180, 250 + i * 20, 2, C.mid, 'center'));
+  if (nameErr) drawText(nameErr, 180, 420, 2, C.orange, 'center');
+  button('nameOk', 70, 450, 220, 56, "C'est parti !", { main: true });
+}
+
+// ---------- Classement entre amis (Google Apps Script) ----------
+// marche sur le site GitHub ; dans l'artifact claude.ai, le réseau est bloqué
+const LB_URL = 'LB_URL_A_REMPLIR';
+let lbData = null, lbState = 'idle', boardFrom = 'title';
+function lbSend(){
+  if (!SAVE.name || !LB_URL.startsWith('https')) return;
+  const body = JSON.stringify({ id: SAVE.id, name: SAVE.name, duel: SAVE.best.duel, bandits: SAVE.bestBandits.duel });
+  try { fetch(LB_URL, { method: 'POST', body, keepalive: true }).catch(() => {}); } catch(e){}
+}
+async function lbLoad(){
+  lbState = 'load';
+  try {
+    if (!LB_URL.startsWith('https')) throw 0;
+    const r = await fetch(LB_URL); lbData = await r.json(); lbState = 'ok';
+  } catch(e){ lbState = 'err'; }
+}
+function drawBoard(){
+  drawText('Classement', 180, 50, 4, C.ink, 'center');
+  hat(180, 40, 1, C.orange);
+  drawText('Duel de Midi', 180, 92, 2, C.mid, 'center');
+  const rows = (lbData && lbData.duel) || [];
+  if (lbState === 'load') drawText('Chargement...', 180, 300, 2, C.mid, 'center');
+  else if (lbState === 'err') { drawText('Pas de connexion.', 180, 290, 2, C.mid, 'center'); drawText('Réessaie plus tard.', 180, 314, 2, C.mid, 'center'); }
+  else if (!rows.length) drawText("Personne n'a encore joué.", 180, 300, 2, C.mid, 'center');
+  else {
+    rows.forEach((r, i) => { r.rank = i + 1; });
+    const meI = rows.findIndex(r => r.name === SAVE.name);
+    const shown = meI >= 12 ? rows.slice(0, 11).concat([rows[meI]]) : rows.slice(0, 12);
+    shown.forEach((r, i) => {
+      const y = 128 + i * 40, me = r.name === SAVE.name;
+      if (me) { ctx.fillStyle = '#fbe3d2'; ctx.fillRect(20, y - 8, 320, 34); }
+      drawText(String(r.rank), 50, y, 3, me ? C.orange : C.mid, 'right');
+      drawText(r.name, 66, y + 4, 2, C.ink);
+      drawText(String(r.duel), 330, y, 3, me ? C.orange : C.ink, 'right');
+    });
+  }
+  button('boardBack', 30, 655, 120, 40, 'Retour');
 }
 
 // ---------- Toucher ----------
@@ -517,6 +598,7 @@ function toWorld(e){ return { x: (e.clientX - offX) / scale, y: (e.clientY - off
 const hit = p => buttons.find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
 cvs.addEventListener('pointerdown', e => {
   e.preventDefault(); audioOn();
+  if (scene === 'name' && document.activeElement === pseudoEl) pseudoEl.blur();
   const p = toWorld(e);
   // en duel, toucher n'importe où = tirer (le plus vite possible, dès l'appui)
   if (scene === 'duel' && (duel.state === 'wait' || duel.state === 'go')) { shoot(); return; }
@@ -534,6 +616,9 @@ cvs.addEventListener('pointerup', e => {
   else if (id === 'music') { SAVE.music = !SAVE.music; save(); Music.volume(); }
   else if (id === 'sound') { SAVE.sound = !SAVE.sound; save(); }
   else if (id === 'back' || id === 'town') go(id === 'back' ? 'title' : 'town');
+  else if (id === 'board') { boardFrom = scene; go('board'); }
+  else if (id === 'boardBack') go(boardFrom === 'duel' ? 'town' : boardFrom);
+  else if (id === 'nameOk') nameOk();
   else if (id === 'g-duel' || id === 'again') go('duel');
 });
 cvs.addEventListener('pointercancel', () => { pressId = null; });
