@@ -71,6 +71,7 @@ const GLYPHS = {
   '-':['00000','00000','00000','01110','00000','00000','00000'], '+':['00000','00100','00100','11111','00100','00100','00000'],
   '/':['00001','00001','00010','00100','01000','10000','10000'], '°':['01100','10010','10010','01100','00000','00000','00000'],
   '«':['00000','00101','01010','10100','01010','00101','00000'], '»':['00000','10100','01010','00101','01010','10100','00000'],
+  '$':['00100','01111','10100','01110','00101','11110','00100'],
   ' ':['00000','00000','00000','00000','00000','00000','00000'],
 };
 // lettres accentuées : lettre de base + petit accent au-dessus (ou cédille dessous)
@@ -100,7 +101,7 @@ function wrap(s, px, maxW){
 
 // ---------- Sauvegarde ----------
 const KEY = 'yiiiha-v1';
-let SAVE = { best: { duel: 0 }, bestBandits: { duel: 0 }, music: true, sound: true };
+let SAVE = { best: { duel: 0, wanted: 0 }, bestBandits: { duel: 0, wanted: 0 }, music: true, sound: true };
 try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d) SAVE = Object.assign(SAVE, d, { best: Object.assign(SAVE.best, d.best), bestBandits: Object.assign(SAVE.bestBandits, d.bestBandits) }); } catch(e){}
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(SAVE)); } catch(e){} }
 
@@ -131,6 +132,12 @@ function burst(t, d, v, type, freq, q = 1, bus = sfxBus){
 }
 const canSfx = () => SAVE.sound && actx;
 const sfx = {
+  // dynamite : gros boum grave
+  boom(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, 1.2, .6, 'lowpass', 600, .7); tone(t, 90, .8, .3, 'sine', 30); burst(t + .05, .4, .2, 'lowpass', 2500, .5); },
+  // mauvaise personne : petit grognement
+  grumble(){ if (!canSfx()) return; const t = actx.currentTime; tone(t, 160, .2, .06, 'sawtooth', 120); tone(t + .18, 140, .22, .05, 'sawtooth', 100); },
+  // diligence au galop
+  gallop(){ if (!canSfx()) return; const t = actx.currentTime; for (let i = 0; i < 12; i++) burst(t + i * .14 + (i % 3) * .03, .05, .07, 'bandpass', 500, 2); },
   // la cloche du duel : ding clair avec harmoniques de cloche
   bell(){ if (!canSfx()) return; const t = actx.currentTime; [[1, .09], [2.76, .04], [5.4, .02], [.5, .03]].forEach(([k, v]) => tone(t, 1046 * k, 1.6, v)); tone(t + .32, 1046, 1.2, .06); tone(t + .32, 2887, .9, .025); },
   // coup de revolver : claquement sec puis écho
@@ -230,7 +237,7 @@ const LOOKS = {
 };
 // (x, y) = pieds ; dir 1 = regarde à droite ; opts.look, opts.pose ('idle' | 'aim' | 'twirl'), opts.hat (false = chapeau envolé)
 function cowboy(x, y, s, dir, opts = {}){
-  const L = LOOKS[opts.look || (opts.bandit ? 'bandit' : 'hero')] || LOOKS.bandit, bandit = !!opts.bandit;
+  const L = opts.L || LOOKS[opts.look || (opts.bandit ? 'bandit' : 'hero')] || LOOKS.bandit, bandit = !!opts.bandit;
   const sc = L.sc || 1, aiming = opts.pose === 'aim' || opts.pose === 'twirl';
   ctx.save(); ctx.translate(x, y); if (opts.rot) ctx.rotate(opts.rot);
   if (L.shake && !opts.rot) ctx.translate(Math.sin(T * 47) * 1.4, 0);
@@ -249,7 +256,7 @@ function cowboy(x, y, s, dir, opts = {}){
     if (L.two) { r(-27, -38, 9, 20, C.dark); if (!aiming) r(-26, -48, 7, 11, '#777'); }
   }
   // le corps : poncho, châle, blouse de docteur ou gros ventre
-  const body = bandit ? '#7a7a7a' : C.mid;
+  const body = L.bodyCol || (bandit ? '#7a7a7a' : C.mid);
   if (L.coat) {
     poly('#eeeeee', [[-15, -74], [15, -74], [18, -22], [-18, -22]]);
     poly(C.light, [[-15, -74], [-4, -74], [0, -58], [4, -74], [15, -74], [15, -72], [5, -72], [0, -54], [-5, -72], [-15, -72]]);
@@ -274,7 +281,8 @@ function cowboy(x, y, s, dir, opts = {}){
   if (opts.hat !== false) lookHat(L, 0, -96, bandit);
   // bras et arme
   const armY = L.fat ? -64 : -66, armX = L.fat ? 26 : 14;
-  if (opts.pose === 'aim'){
+  if (opts.pose === 'hands'){ r(-22, -104, 7, 32, C.light); r(15, -104, 7, 32, C.light); }
+  else if (opts.pose === 'aim'){
     if (L.rifle) { r(armX, armY, 22, 8, C.light); rifle(36, armY, opts.flash); }
     else {
       r(armX, armY, 30, 8, L.coat ? '#eeeeee' : C.mid); revolver(armX + 30, armY, 1, opts.flash);
@@ -312,6 +320,9 @@ function face(L, r, bandit){
     case 'chat':     // yeux en fente, moustaches fines qui dépassent, petit nez : à peine visible
       r(-6, -93, 2, 5, C.ink); r(5, -93, 2, 5, C.ink); r(-1, -85, 2, 2, C.dark);
       r(-19, -83, 13, 1, C.dark); r(-18, -80, 12, 1, C.dark); r(6, -83, 13, 1, C.dark); r(6, -80, 12, 1, C.dark); break;
+    case 'moustache': r(-10, -84, 20, 5, C.dark); r(-6, -91, 3, 3, C.ink); r(4, -91, 3, 3, C.ink); break;
+    case 'plain':     r(-6, -91, 3, 3, C.ink); r(4, -91, 3, 3, C.ink); r(-3, -81, 6, 2, C.mid); break;
+    case 'mask':      r(-12, -86, 24, 12, C.ink); r(-6, -91, 4, 3, C.ink); r(4, -91, 4, 3, C.ink); break;
     default:
       if (L.mask || bandit) { r(-12, -86, 24, 12, C.ink); r(-6, -91, 4, 3, C.ink); r(4, -91, 4, 3, C.ink); }
       else { r(-10, -84, 20, 5, C.dark); r(-6, -91, 3, 3, C.ink); r(4, -91, 3, 3, C.ink); }
@@ -319,7 +330,7 @@ function face(L, r, bandit){
 }
 // le chapeau propre à chacun ; (x, y) = haut de la tête
 function lookHat(L, x, y, bandit){
-  const col = bandit ? C.black : C.dark;
+  const col = L.hatCol || (bandit ? C.black : C.dark);
   if (L.hat === 'sombrero') sombrero(x, y + 2, col);
   else if (L.hat === 'small') { hat(x, y, .7, col); ctx.fillStyle = C.orange; ctx.fillRect(x + 4, y - 12, 4, 4); }
   else if (L.hat === 'big') hat(x, y + 9, 1.45, col);
@@ -421,7 +432,9 @@ let titleTaps = 0, titleTapT = 0;
 function go(s){
   scene = s; pressId = null;
   if (s === 'board') lbLoad();
+  fuse(false);
   if (s === 'duel') { Music.set('duel'); startDuelRun(); } else { Music.set('town'); wind(false); }
+  if (s === 'wanted') startWanted();
 }
 function startDuelRun(){ duel.n = 1; duel.score = 0; duel.newBest = false; newRound(); }
 function newRound(){
@@ -435,6 +448,7 @@ function newRound(){
 
 function update(dt){
   T += dt;
+  if (scene === 'wanted') { updateWanted(dt); return; }
   if (scene !== 'duel') return;
   const d = duel; d.t += dt;
   if (d.state === 'intro' && d.t > 2.2){ d.state = 'wait'; d.t = 0; wind(true); }
@@ -496,11 +510,11 @@ function drawTitle(){
 }
 const GAMES = [
   { id: 'duel', name: 'Duel de Midi', open: true },
+  { id: 'wanted', name: 'Avis de recherche', open: true },
   { id: 'cans', name: 'Boîtes de conserve' },
   { id: 'lasso', name: 'Le Lasso' },
   { id: 'coach', name: 'La Diligence' },
   { id: 'saloon', name: 'Le Saloon' },
-  { id: 'wanted', name: 'Avis de recherche' },
 ];
 function drawTown(){
   drawText('La ville', 180, 60, 4, C.ink, 'center');
@@ -511,7 +525,7 @@ function drawTown(){
       button('g-' + g.id, 30, y, 300, 70, '', {});
       drawText(g.name, 50, ny, px, C.ink);
       const b = SAVE.best[g.id] || 0;
-      drawText(b ? 'Record : ' + b : 'Pas encore joué', 50, y + 46, 2, C.mid);
+      drawText(b ? 'Record : ' + b + (g.id === 'wanted' ? ' $' : '') : 'Pas encore joué', 50, y + 46, 2, C.mid);
     } else {
       button('lock-' + g.id, 30, y, 300, 70, '', { off: true });
       drawText(g.name, 50, ny, px, C.light);
@@ -613,9 +627,178 @@ function draw(){
   ctx.fillStyle = C.white; ctx.fillRect(0, 0, cvs.width, cvs.height);
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
   buttons = [];
-  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else drawDuel();
+  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else drawDuel();
   placePseudo();
   if (askReset) { buttons = []; drawReset(); }
+}
+
+// ---------- Mini-jeu : Avis de recherche (WANTED) ----------
+// Une affiche montre un bandit : retrouve-le dans la foule avant que la mèche de dynamite arrive au bout.
+// Les différences entre les gens se voient toutes sur l'affiche : chapeau, couleur du chapeau, visage, couleur du poncho.
+const FEAT = {
+  hat:     ['cowboy', 'sombrero', 'small', 'huge'],
+  hatCol:  [C.dark, C.black, C.light],
+  face:    ['moustache', 'mask', 'fouine', 'mamie', 'dort', 'guapo', 'doc', 'plain'],
+  bodyCol: [C.mid, '#6f6f6f', C.light, C.dark],
+};
+const FEAT_KEYS = Object.keys(FEAT);
+const NOT_ME = ["C'est pas moi !", "J'ai rien fait, moi !", 'Je passais juste...', 'Erreur sur la personne !'];
+const FUSE_MAX = 30, FUSE_START = 20, STREET_TOP = 330, STREET_BOT = 640;
+const WT = { state: 'play', t: 0, fuse: FUSE_START, caught: 0, score: 0, prime: 100, target: null, people: [], coach: null, coachT: 0, msg: null, newBest: false, boom: 0 };
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const sameLook = (a, b) => FEAT_KEYS.every(k => a[k] === b[k]);
+function randomLook(){ const L = {}; FEAT_KEYS.forEach(k => { L[k] = pick(FEAT[k]); }); L.fat = Math.random() < .25; L.sc = .9 + Math.random() * .2; return L; }
+// un sosie : pareil que le bandit, sauf un seul détail
+function lookAlike(t){ const L = Object.assign({}, t, { fat: Math.random() < .25, sc: .9 + Math.random() * .2 }), k = pick(FEAT_KEYS); L[k] = pick(FEAT[k].filter(v => v !== t[k])); return L; }
+
+function startWanted(){
+  Object.assign(WT, { state: 'play', t: 0, fuse: FUSE_START, caught: 0, score: 0, newBest: false, coach: null, coachT: 6, msg: null, boom: 0 });
+  newWanted(); fuse(true);
+}
+function newWanted(){
+  const n = WT.caught;
+  WT.prime = 100 * (1 + Math.floor(n / 2));
+  WT.target = randomLook();
+  const count = Math.min(22, 5 + n * 2), alike = n >= 4 ? Math.min(.8, (n - 3) * .15) : 0, speed = 18 + n * 3;
+  const looks = [WT.target];
+  while (looks.length < count){
+    const L = Math.random() < alike ? lookAlike(WT.target) : randomLook();
+    if (!sameLook(L, WT.target)) looks.push(L);
+  }
+  WT.people = looks.map((L, i) => ({
+    L, x: 30 + Math.random() * 300, y: STREET_TOP + 75 + Math.random() * (STREET_BOT - STREET_TOP - 75),
+    vx: (Math.random() < .5 ? -1 : 1) * speed * (.6 + Math.random() * .8), vy: (Math.random() - .5) * speed * .4,
+    ph: Math.random() * 6, target: i === 0, oops: 0, line: '',
+  }));
+  WT.state = 'play'; WT.t = 0;
+}
+function updateWanted(dt){
+  const w = WT; w.t += dt;
+  if (w.state === 'play'){
+    w.fuse -= dt;
+    if (w.fuse <= 0){ w.fuse = 0; w.state = 'boom'; w.t = 0; fuse(false); sfx.boom(); }
+    w.people.forEach(p => {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.ph += dt * 9;
+      if (p.x < 22 || p.x > 338) { p.vx *= -1; p.x = Math.max(22, Math.min(338, p.x)); }
+      if (p.y < STREET_TOP + 75 || p.y > STREET_BOT) { p.vy *= -1; p.y = Math.max(STREET_TOP + 75, Math.min(STREET_BOT, p.y)); }
+      if (p.oops > 0) p.oops -= dt;
+    });
+    // la diligence passe devant tout le monde (à partir du 6e bandit)
+    if (w.caught >= 5){
+      if (w.coach){ w.coach.x += w.coach.v * dt; if (w.coach.x < -260 || w.coach.x > W + 260) w.coach = null; }
+      else if ((w.coachT -= dt) <= 0){ const left = Math.random() < .5; w.coach = { x: left ? -200 : W + 200, v: left ? 170 : -170, y: STREET_TOP + 120 + Math.random() * 150 }; w.coachT = 5 + Math.random() * 5; sfx.gallop(); }
+    }
+  } else if (w.state === 'caught'){
+    if (w.t > 1.1) newWanted();
+  } else if (w.state === 'boom'){
+    if (w.t > 1.8) endWanted();
+  }
+}
+function endWanted(){
+  const w = WT;
+  if (w.score > (SAVE.best.wanted || 0)) { SAVE.best.wanted = w.score; w.newBest = true; }
+  if (w.caught > (SAVE.bestBandits.wanted || 0)) SAVE.bestBandits.wanted = w.caught;
+  save(); w.state = 'over'; w.t = 0; sfx.lose(); lbSend();
+}
+function tapWanted(p){
+  const w = WT;
+  // la diligence cache ceux qui sont derrière
+  if (w.coach && p.x > w.coach.x - 110 && p.x < w.coach.x + 110 && p.y > w.coach.y - 90 && p.y < w.coach.y + 10) return;
+  // on prend la personne la plus en avant sous le doigt
+  const hits = w.people.filter(q => Math.abs(p.x - q.x) < 22 * q.L.sc + (q.L.fat ? 8 : 0) && p.y < q.y + 4 && p.y > q.y - 84 * q.L.sc);
+  if (!hits.length) return;
+  const q = hits.sort((a, b) => b.y - a.y)[0];
+  if (q.target){
+    w.state = 'caught'; w.t = 0; w.caught++; w.score += w.prime; w.fuse = Math.min(FUSE_MAX, w.fuse + 3);
+    w.caughtP = q; sfx.sting();
+  } else if (q.oops <= 0){
+    q.oops = 1.2; q.line = pick(NOT_ME); w.fuse = Math.max(0, w.fuse - 2); sfx.grumble();
+  }
+}
+function drawWanted(){
+  const w = WT;
+  // la mèche de dynamite : elle raccourcit avec le temps
+  const fx0 = 52, fx1 = 340, end = fx0 + (fx1 - fx0) * (w.fuse / FUSE_MAX);
+  ctx.fillStyle = C.orange; ctx.fillRect(14, 18, 34, 22); ctx.fillStyle = C.orangeD; ctx.fillRect(14, 25, 34, 4); ctx.fillRect(22, 18, 2, 22); ctx.fillRect(38, 18, 2, 22);
+  ctx.fillStyle = C.mid; ctx.fillRect(fx0 - 4, 28, end - fx0 + 4, 3);
+  if (w.state === 'play'){ ctx.fillStyle = C.orange; const f = 3 + Math.sin(T * 40) * 2; ctx.fillRect(end - f, 29 - f, f * 2, f * 2); ctx.fillStyle = '#ffd34d'; ctx.fillRect(end - 1, 28, 3, 3); }
+  // l'affiche
+  const px = 95, py = 52, pw = 170, ph = 216;
+  ctx.fillStyle = '#f4f4f4'; ctx.fillRect(px, py, pw, ph); ctx.fillStyle = C.ink; ctx.fillRect(px, py, pw, 3); ctx.fillRect(px, py + ph - 3, pw, 3); ctx.fillRect(px, py, 3, ph); ctx.fillRect(px + pw - 3, py, 3, ph);
+  ctx.fillStyle = C.mid; ctx.fillRect(px + pw / 2 - 3, py + 6, 6, 6);
+  drawText('WANTED', 180, py + 18, 4, C.orange, 'center');
+  ctx.save(); ctx.beginPath(); ctx.rect(px + 12, py + 54, pw - 24, 104); ctx.clip();
+  ctx.fillStyle = '#e6e6e6'; ctx.fillRect(px + 12, py + 54, pw - 24, 104);
+  cowboy(180, py + 243, 1.45, 1, { bandit: true, L: Object.assign({}, w.target, { fat: false, sc: 1 }) });
+  ctx.restore();
+  drawText('Récompense', 180, py + 168, 2, C.mid, 'center');
+  drawText(w.prime + ' $', 180, py + 186, 3, C.ink, 'center');
+  // la grand-rue
+  ctx.fillStyle = C.ground; ctx.fillRect(0, STREET_TOP - 4, W, 4);
+  for (let i = 0; i < 5; i++) { ctx.fillStyle = '#f3f3f3'; ctx.fillRect(10 + i * 72, 284, 60, STREET_TOP - 288); ctx.fillStyle = C.ground; ctx.fillRect(28 + i * 72, 300, 24, STREET_TOP - 304); }
+  const sorted = w.people.slice().sort((a, b) => a.y - b.y);
+  sorted.forEach(q => {
+    const caught = w.state === 'caught' && q === w.caughtP;
+    const bob = (w.state === 'play' && !caught) ? Math.abs(Math.sin(q.ph)) * 2 : 0;
+    const shake = q.oops > 0 ? Math.sin(T * 50) * 2 : 0;
+    cowboy(q.x + shake, q.y - bob, .65 * q.L.sc, q.vx < 0 ? -1 : 1, { bandit: true, L: q.L, pose: caught ? 'hands' : 'idle' });
+  });
+  if (w.coach) drawCoach(w.coach.x, w.coach.y, w.coach.v < 0 ? -1 : 1);
+  // bulles : « C'est pas moi ! »
+  w.people.forEach(q => { if (q.oops > 0) bubble(q.line, q.x, q.y - 88 * q.L.sc); });
+  if (w.state === 'caught') drawText('Pris !', w.caughtP.x, w.caughtP.y - 112, 4, C.orange, 'center');
+  // bas : primes et record
+  drawText(w.score + ' $', 20, 664, 3, C.ink);
+  drawText('Attrapés : ' + w.caught, 20, 692, 2, C.mid);
+  drawText('Record ' + (SAVE.best.wanted || 0) + ' $', W - 20, 670, 2, C.light, 'right');
+  if (w.state === 'boom'){
+    const k = Math.min(1, w.t / .3);
+    ctx.fillStyle = 'rgba(232,116,42,' + (1 - k) * .8 + ')'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = C.orange; for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2, d = 20 + k * 70; ctx.fillRect(31 + Math.cos(a) * d, 29 + Math.sin(a) * d, 8, 8); }
+    drawText('BOUM !', 180, 300, 8, C.ink, 'center');
+  }
+  if (w.state === 'over') drawWantedOver();
+}
+function bubble(s, x, y){
+  const tw = textW(s.toUpperCase(), 2) + 16, bx = Math.max(6, Math.min(W - 6 - tw, x - tw / 2));
+  ctx.fillStyle = C.white; ctx.fillRect(bx, y - 26, tw, 24); ctx.fillStyle = C.ink;
+  ctx.fillRect(bx, y - 26, tw, 2); ctx.fillRect(bx, y - 4, tw, 2); ctx.fillRect(bx, y - 26, 2, 24); ctx.fillRect(bx + tw - 2, y - 26, 2, 24);
+  ctx.fillRect(x - 3, y - 2, 6, 4);
+  drawText(s, bx + 8, y - 19, 2, C.ink);
+}
+function drawCoach(x, y, dir){
+  ctx.save(); ctx.translate(x, y); ctx.scale(dir, 1);
+  // chevaux devant
+  ctx.fillStyle = C.mid; ctx.fillRect(60, -50, 50, 22); ctx.fillRect(100, -66, 16, 24); ctx.fillRect(64, -28, 6, 26); ctx.fillRect(98, -28, 6, 26);
+  ctx.fillStyle = C.dark; ctx.fillRect(112, -70, 6, 8);
+  // la caisse
+  ctx.fillStyle = C.ink; ctx.fillRect(-100, -92, 150, 70); ctx.fillStyle = C.light; ctx.fillRect(-80, -80, 34, 24); ctx.fillRect(-30, -80, 34, 24);
+  ctx.fillStyle = C.dark; ctx.fillRect(-106, -98, 162, 8);
+  ctx.fillStyle = C.mid; [[-74, -18], [26, -18]].forEach(([a, b]) => { ctx.fillRect(a - 16, b - 16, 32, 32); ctx.fillStyle = C.white; ctx.fillRect(a - 8, b - 8, 16, 16); ctx.fillStyle = C.mid; });
+  ctx.restore();
+}
+function drawWantedOver(){
+  const w = WT;
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(0, 0, W, H);
+  drawText('Fin de la chasse', 180, 150, 4, C.ink, 'center');
+  hat(180, 135, 1, C.orange);
+  drawText('Bandits attrapés : ' + w.caught, 180, 220, 2, C.mid, 'center');
+  drawText('Primes', 180, 252, 2, C.mid, 'center');
+  drawText(w.score + ' $', 180, 274, 6, C.ink, 'center');
+  drawText('Record : ' + (SAVE.best.wanted || 0) + ' $', 180, 336, 2, C.mid, 'center');
+  if (w.newBest && Math.floor(T * 3) % 2 === 0) drawText('Nouveau record !', 180, 376, 3, C.orange, 'center');
+  button('againW', 70, 440, 220, 56, 'Rejouer', { main: true });
+  button('board', 70, 516, 220, 48, 'Classement');
+  button('town', 70, 584, 220, 48, 'La ville');
+}
+// grésillement de la mèche
+let fuseNode = null;
+function fuse(on){
+  if (!actx) return;
+  if (on && !fuseNode && SAVE.sound){
+    const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(); n.loop = true; f.type = 'highpass'; f.frequency.value = 5000;
+    g.gain.value = .0001; g.gain.setTargetAtTime(.025, actx.currentTime, .2); n.connect(f).connect(g).connect(sfxBus); n.start(); fuseNode = { n, g };
+  } else if (!on && fuseNode){ const x = fuseNode; fuseNode = null; x.g.gain.setTargetAtTime(.0001, actx.currentTime, .05); setTimeout(() => { try { x.n.stop(); } catch(e){} }, 300); }
 }
 
 // ---------- Pseudo (choisi une seule fois, au premier lancement) ----------
@@ -649,10 +832,10 @@ function drawName(){
 // ---------- Classement entre amis (Google Apps Script) ----------
 // marche sur le site GitHub ; dans l'artifact claude.ai, le réseau est bloqué
 const LB_URL = 'https://script.google.com/macros/s/AKfycbwoeVB6kM4BwQj6q0EyTLvaVmzvhe5Hy9IwEUr_7TPSZlOSmWStc6DaSgbwOPVif6VrPQ/exec';
-let lbData = null, lbState = 'idle', boardFrom = 'title';
+let lbData = null, lbState = 'idle', boardFrom = 'title', boardGame = 'duel';
 function lbSend(){
   if (!SAVE.name || !LB_URL.startsWith('https')) return;
-  const body = JSON.stringify({ id: SAVE.id, name: SAVE.name, duel: SAVE.best.duel, bandits: SAVE.bestBandits.duel });
+  const body = JSON.stringify({ id: SAVE.id, name: SAVE.name, duel: SAVE.best.duel, bandits: SAVE.bestBandits.duel, wanted: SAVE.best.wanted || 0, caught: SAVE.bestBandits.wanted || 0 });
   try { fetch(LB_URL, { method: 'POST', body, keepalive: true }).catch(() => {}); } catch(e){}
 }
 async function lbLoad(){
@@ -660,17 +843,20 @@ async function lbLoad(){
   try {
     if (!LB_URL.startsWith('https')) throw 0;
     const r = await fetch(LB_URL); lbData = await r.json(); lbState = 'ok';
+    // l'ancien serveur renvoyait « duel » au lieu de « score »
+    Object.values(lbData).forEach(rows => Array.isArray(rows) && rows.forEach(x => { if (x.score == null) x.score = x.duel; }));
   } catch(e){ lbState = 'err'; }
 }
 function drawBoard(){
   drawText('Classement', 180, 50, 4, C.ink, 'center');
   hat(180, 40, 1, C.orange);
-  drawText('Duel de Midi', 180, 92, 2, C.mid, 'center');
+  button('tab-duel', 30, 84, 145, 36, 'Duel', { main: boardGame === 'duel' });
+  button('tab-wanted', 185, 84, 145, 36, 'Wanted', { main: boardGame === 'wanted' });
   // même pseudo = même joueur (ex. Safari et l'icône de l'écran d'accueil) : on garde son meilleur score ;
   // ceux qui n'ont pas encore marqué de points n'apparaissent pas
   const best = {};
-  ((lbData && lbData.duel) || []).forEach(r => { if (r.duel > 0 && (!best[r.name] || r.duel > best[r.name].duel)) best[r.name] = r; });
-  const rows = Object.values(best).sort((a, b) => b.duel - a.duel);
+  ((lbData && lbData[boardGame]) || []).forEach(r => { if (r.score > 0 && (!best[r.name] || r.score > best[r.name].score)) best[r.name] = r; });
+  const rows = Object.values(best).sort((a, b) => b.score - a.score);
   if (lbState === 'load') drawText('Chargement...', 180, 300, 2, C.mid, 'center');
   else if (lbState === 'err') { drawText('Pas de connexion.', 180, 290, 2, C.mid, 'center'); drawText('Réessaie plus tard.', 180, 314, 2, C.mid, 'center'); }
   else if (!rows.length) drawText("Personne n'a encore joué.", 180, 300, 2, C.mid, 'center');
@@ -679,11 +865,11 @@ function drawBoard(){
     const meI = rows.findIndex(r => r.name === SAVE.name);
     const shown = meI >= 12 ? rows.slice(0, 11).concat([rows[meI]]) : rows.slice(0, 12);
     shown.forEach((r, i) => {
-      const y = 128 + i * 40, me = r.name === SAVE.name;
+      const y = 140 + i * 40, me = r.name === SAVE.name;
       if (me) { ctx.fillStyle = '#fbe3d2'; ctx.fillRect(20, y - 8, 320, 34); }
       drawText(String(r.rank), 50, y, 3, me ? C.orange : C.mid, 'right');
       drawText(r.name, 66, y + 4, 2, C.ink);
-      drawText(String(r.duel), 330, y, 3, me ? C.orange : C.ink, 'right');
+      drawText(r.score + (boardGame === 'wanted' ? ' $' : ''), 330, y, 3, me ? C.orange : C.ink, 'right');
     });
   }
   button('boardBack', 30, 655, 120, 40, 'Retour');
@@ -698,6 +884,7 @@ cvs.addEventListener('pointerdown', e => {
   const p = toWorld(e);
   // en duel, toucher n'importe où = tirer (le plus vite possible, dès l'appui)
   if (scene === 'duel' && (duel.state === 'wait' || duel.state === 'go')) { shoot(); return; }
+  if (scene === 'wanted' && WT.state === 'play') { tapWanted(p); return; }
   const b = hit(p); pressId = b ? b.id : null;
   // mode test caché : toucher 5 fois le logo
   if (scene === 'title' && !askReset && p.y > 150 && p.y < 320){ const n = performance.now(); titleTaps = n - titleTapT < 600 ? titleTaps + 1 : 1; titleTapT = n; if (titleTaps >= 5) { titleTaps = 0; testMode(); } }
@@ -706,16 +893,18 @@ cvs.addEventListener('pointerup', e => {
   const p = toWorld(e), b = hit(p), id = pressId; pressId = null;
   if (!b || b.id !== id) return;
   sfx.tap();
-  if (id === 'resetYes') { SAVE.best = { duel: 0 }; SAVE.bestBandits = { duel: 0 }; save(); askReset = false; }
+  if (id === 'resetYes') { SAVE.best = { duel: 0, wanted: 0 }; SAVE.bestBandits = { duel: 0, wanted: 0 }; save(); askReset = false; }
   else if (id === 'resetNo') askReset = false;
   else if (id === 'play') go('town');
   else if (id === 'music') { SAVE.music = !SAVE.music; save(); Music.volume(); }
   else if (id === 'sound') { SAVE.sound = !SAVE.sound; save(); }
   else if (id === 'back' || id === 'town') go(id === 'back' ? 'title' : 'town');
-  else if (id === 'board') { boardFrom = scene; go('board'); }
-  else if (id === 'boardBack') go(boardFrom === 'duel' ? 'town' : boardFrom);
+  else if (id === 'board') { boardFrom = scene; boardGame = scene === 'wanted' ? 'wanted' : 'duel'; go('board'); }
+  else if (id === 'tab-duel' || id === 'tab-wanted') boardGame = id.slice(4);
+  else if (id === 'boardBack') go(boardFrom === 'duel' || boardFrom === 'wanted' ? 'town' : boardFrom);
   else if (id === 'nameOk') nameOk();
   else if (id === 'g-duel' || id === 'again') go('duel');
+  else if (id === 'g-wanted' || id === 'againW') go('wanted');
 });
 cvs.addEventListener('pointercancel', () => { pressId = null; });
 // mode test : propose d'effacer les records (pour tester depuis zéro), confirmé dans le jeu
