@@ -215,41 +215,130 @@ function wind(on){
 }
 
 // ---------- Dessin : le cow-boy en blocs ----------
-// (x, y) = pieds ; dir 1 = regarde à droite ; opts.bandit, opts.pose ('idle' | 'aim' | 'twirl'), opts.hat (false = chapeau envolé)
+// Chaque bandit a sa silhouette : taille, chapeau, visage, tenue et arme
+const LOOKS = {
+  hero:   {},
+  bandit: { mask: true },
+  fouine: { sx: .82, sy: 1.12, face: 'fouine' },
+  billy:  { mask: true, two: true, bando: true },
+  mamie:  { sy: .84, face: 'mamie', hat: 'small', skirt: true, shawl: true, rifle: true, cane: true },
+  kid:    { sc: .7, face: 'boude', hat: 'big' },
+  siesta: { face: 'dort', hat: 'sombrero', stripes: true },
+  gordo:  { face: 'guapo', hat: 'huge', fat: true },
+  doc:    { face: 'doc', coat: true, shake: true },
+  chat:   { face: 'chat', hat: 'ears' },
+};
+// (x, y) = pieds ; dir 1 = regarde à droite ; opts.look, opts.pose ('idle' | 'aim' | 'twirl'), opts.hat (false = chapeau envolé)
 function cowboy(x, y, s, dir, opts = {}){
-  const bandit = !!opts.bandit, hatCol = bandit ? C.black : C.dark;
-  ctx.save(); ctx.translate(x, y); if (opts.rot) ctx.rotate(opts.rot); ctx.scale(s * dir, s);
+  const L = LOOKS[opts.look || (opts.bandit ? 'bandit' : 'hero')] || LOOKS.bandit, bandit = !!opts.bandit;
+  const sc = L.sc || 1, aiming = opts.pose === 'aim' || opts.pose === 'twirl';
+  ctx.save(); ctx.translate(x, y); if (opts.rot) ctx.rotate(opts.rot);
+  if (L.shake && !opts.rot) ctx.translate(Math.sin(T * 47) * 1.4, 0);
+  ctx.scale(s * dir * sc * (L.sx || 1), s * sc * (L.sy || 1));
   const r = (a, b, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(a, b, w, h); };
-  // jambes, bottes
-  r(-9, -30, 7, 30, C.light); r(2, -30, 7, 30, C.light);
-  r(-11, -6, 9, 6, C.dark); r(2, -6, 9, 6, C.dark);
-  // holster sur la hanche
-  r(18, -38, 9, 20, C.dark);
-  if (opts.pose !== 'aim' && opts.pose !== 'twirl') r(19, -48, 7, 11, '#777');
-  // poncho
-  const look = opts.look, wide = look === 'gordo' ? 8 : 0;
-  ctx.fillStyle = bandit ? '#7a7a7a' : C.mid;
-  ctx.beginPath(); ctx.moveTo(-24 - wide, -34); ctx.lineTo(-14, -74); ctx.lineTo(14, -74); ctx.lineTo(24 + wide, -34); ctx.fill();
-  ctx.fillStyle = bandit ? C.dark : C.light;
-  ctx.beginPath(); ctx.moveTo(-14, -74); ctx.lineTo(14, -74); ctx.lineTo(0, -56); ctx.fill();
-  // tête, moustache (ou foulard du bandit)
-  r(-12, -96, 24, 22, '#d6d6d6');
-  if (look === 'chat') {
-    // yeux en fente, moustaches fines qui dépassent, petit nez : à peine visible
-    r(-6, -93, 2, 5, C.ink); r(5, -93, 2, 5, C.ink); r(-1, -85, 2, 2, C.dark);
-    r(-19, -83, 13, 1, C.dark); r(-18, -80, 12, 1, C.dark); r(6, -83, 13, 1, C.dark); r(6, -80, 12, 1, C.dark);
+  const poly = (col, pts) => { ctx.fillStyle = col; ctx.beginPath(); pts.forEach(([a, b], i) => i ? ctx.lineTo(a, b) : ctx.moveTo(a, b)); ctx.fill(); };
+  // jambes (ou longue jupe), bottes
+  if (L.skirt) { poly(C.mid, [[-14, -36], [14, -36], [20, -4], [-20, -4]]); r(-12, -4, 9, 4, C.dark); r(3, -4, 9, 4, C.dark); }
+  else { r(-9, -30, 7, 30, C.light); r(2, -30, 7, 30, C.light); r(-11, -6, 9, 6, C.dark); r(2, -6, 9, 6, C.dark); }
+  // canne de mamie
+  if (L.cane) { r(-30, -42, 3, 42, C.dark); r(-33, -44, 9, 3, C.dark); }
+  // holster(s) sur la hanche
+  if (!L.rifle) {
+    r(18 + (L.fat ? 12 : 0), -38, 9, 20, C.dark);
+    if (!aiming) r(19 + (L.fat ? 12 : 0), -48, 7, 11, '#777');
+    if (L.two) { r(-27, -38, 9, 20, C.dark); if (!aiming) r(-26, -48, 7, 11, '#777'); }
   }
-  else if (bandit) { r(-12, -86, 24, 12, C.ink); r(-6, -91, 4, 3, C.ink); r(4, -91, 4, 3, C.ink); }
-  else { r(-10, -84, 20, 5, C.dark); r(-6, -91, 3, 3, C.ink); r(4, -91, 3, 3, C.ink); }
-  if (opts.hat !== false) hat(0, -96, look === 'gordo' ? 1.5 : 1, hatCol, null, look === 'chat');
-  // bras et revolver
+  // le corps : poncho, châle, blouse de docteur ou gros ventre
+  const body = bandit ? '#7a7a7a' : C.mid;
+  if (L.coat) {
+    poly('#eeeeee', [[-15, -74], [15, -74], [18, -22], [-18, -22]]);
+    poly(C.light, [[-15, -74], [-4, -74], [0, -58], [4, -74], [15, -74], [15, -72], [5, -72], [0, -54], [-5, -72], [-15, -72]]);
+    r(-1, -54, 2, 32, C.light); r(6, -46, 6, 5, C.light);
+  } else if (L.fat) {
+    ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, -48, 32, 26, 0, 0, Math.PI * 2); ctx.fill();
+    poly(C.dark, [[-14, -74], [14, -74], [0, -60]]);
+    r(-31, -40, 62, 5, C.dark); r(-4, -41, 8, 7, C.light);
+  } else {
+    poly(L.shawl ? C.light : body, [[-24, -34], [-14, -74], [14, -74], [24, -34]]);
+    poly(bandit ? C.dark : C.light, [[-14, -74], [14, -74], [0, -56]]);
+    if (L.shawl) for (let i = -22; i < 22; i += 5) r(i, -34, 2, 4, C.mid);
+    if (L.stripes) { r(-19, -54, 38, 4, C.light); r(-21, -46, 42, 3, C.orange); r(-22, -40, 44, 3, C.light); }
+    if (L.bando) {
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-13, -72); ctx.lineTo(17, -38); ctx.moveTo(13, -72); ctx.lineTo(-17, -38); ctx.stroke();
+      ctx.fillStyle = C.light; for (let k = 0; k < 4; k++) { ctx.fillRect(-9 + k * 7, -66 + k * 7.5, 2, 3); ctx.fillRect(7 - k * 7, -66 + k * 7.5, 2, 3); }
+    }
+  }
+  // la tête et le visage
+  r(-12, -96, 24, 22, '#d6d6d6');
+  face(L, r, bandit);
+  if (opts.hat !== false) lookHat(L, 0, -96, bandit);
+  // bras et arme
+  const armY = L.fat ? -64 : -66, armX = L.fat ? 26 : 14;
   if (opts.pose === 'aim'){
-    r(14, -66, 30, 8, C.mid);
-    revolver(44, -66, 1, opts.flash);
+    if (L.rifle) { r(armX, armY, 22, 8, C.light); rifle(36, armY, opts.flash); }
+    else {
+      r(armX, armY, 30, 8, L.coat ? '#eeeeee' : C.mid); revolver(armX + 30, armY, 1, opts.flash);
+      if (L.two) { r(armX, armY + 10, 28, 7, C.mid); revolver(armX + 28, armY + 10, .9, opts.flash); }
+    }
   } else if (opts.pose === 'twirl'){
     r(14, -66, 22, 8, C.mid);
     ctx.save(); ctx.translate(40, -62); ctx.rotate(opts.spin || 0); revolver(-4, 0, .9); ctx.restore();
   }
+  ctx.restore();
+}
+// visages : on reconnaît chacun à sa tête
+function face(L, r, bandit){
+  switch (L.face){
+    case 'fouine':   // petits yeux rapprochés, long nez pointu, moustache fine
+      r(-3, -91, 3, 3, C.ink); r(3, -91, 3, 3, C.ink);
+      ctx.fillStyle = C.mid; ctx.beginPath(); ctx.moveTo(8, -88); ctx.lineTo(20, -84); ctx.lineTo(8, -82); ctx.fill();
+      r(-6, -79, 14, 2, C.dark); break;
+    case 'mamie':    // cheveux blancs qui dépassent, lunettes rondes, bouche pincée
+      r(-17, -96, 6, 12, C.faint); r(11, -96, 6, 12, C.faint);
+      r(-9, -92, 7, 6, C.ink); r(-8, -91, 5, 4, '#eeeeee'); r(2, -92, 7, 6, C.ink); r(3, -91, 5, 4, '#eeeeee'); r(-2, -90, 4, 1, C.ink);
+      r(-3, -80, 6, 2, C.mid); break;
+    case 'boude':    // le chapeau trop grand lui tombe sur les yeux, la bouche boudeuse
+      r(-5, -80, 10, 2, C.ink); r(-7, -78, 2, 2, C.ink); r(5, -78, 2, 2, C.ink); r(-9, -86, 3, 2, C.light); r(6, -86, 3, 2, C.light); break;
+    case 'dort':     // yeux fermés, énorme moustache qui tombe
+      r(-8, -90, 6, 2, C.ink); r(3, -90, 6, 2, C.ink);
+      r(-12, -85, 24, 5, C.dark); r(-13, -80, 4, 8, C.dark); r(9, -80, 4, 8, C.dark); break;
+    case 'guapo':    // clin d'œil, sourcil levé, moustache en guidon, dent en or
+      r(-7, -94, 6, 2, C.ink); r(-6, -90, 3, 3, C.ink); r(3, -89, 5, 2, C.ink);
+      r(-11, -84, 22, 4, C.dark); r(-14, -88, 3, 5, C.dark); r(11, -88, 3, 5, C.dark);
+      r(-4, -79, 8, 2, C.ink); r(1, -79, 2, 2, C.orange); break;
+    case 'doc':      // lunettes carrées, petite barbiche
+      r(-10, -93, 8, 7, C.ink); r(-9, -92, 6, 5, '#eeeeee'); r(2, -93, 8, 7, C.ink); r(3, -92, 6, 5, '#eeeeee'); r(-2, -90, 4, 1, C.ink);
+      r(-2, -80, 4, 7, C.dark); break;
+    case 'chat':     // yeux en fente, moustaches fines qui dépassent, petit nez : à peine visible
+      r(-6, -93, 2, 5, C.ink); r(5, -93, 2, 5, C.ink); r(-1, -85, 2, 2, C.dark);
+      r(-19, -83, 13, 1, C.dark); r(-18, -80, 12, 1, C.dark); r(6, -83, 13, 1, C.dark); r(6, -80, 12, 1, C.dark); break;
+    default:
+      if (L.mask || bandit) { r(-12, -86, 24, 12, C.ink); r(-6, -91, 4, 3, C.ink); r(4, -91, 4, 3, C.ink); }
+      else { r(-10, -84, 20, 5, C.dark); r(-6, -91, 3, 3, C.ink); r(4, -91, 3, 3, C.ink); }
+  }
+}
+// le chapeau propre à chacun ; (x, y) = haut de la tête
+function lookHat(L, x, y, bandit){
+  const col = bandit ? C.black : C.dark;
+  if (L.hat === 'sombrero') sombrero(x, y + 2, col);
+  else if (L.hat === 'small') { hat(x, y, .7, col); ctx.fillStyle = C.orange; ctx.fillRect(x + 4, y - 12, 4, 4); }
+  else if (L.hat === 'big') hat(x, y + 9, 1.45, col);
+  else if (L.hat === 'huge') hat(x, y, 1.6, col);
+  else hat(x, y, 1, col, null, L.hat === 'ears');
+}
+function sombrero(x, y, col){
+  ctx.save(); ctx.translate(x, y); ctx.fillStyle = col;
+  ctx.fillRect(-40, -6, 80, 6); ctx.fillRect(-44, -12, 6, 8); ctx.fillRect(38, -12, 6, 8);
+  ctx.beginPath(); ctx.moveTo(-14, -6); ctx.lineTo(-8, -34); ctx.lineTo(8, -34); ctx.lineTo(14, -6); ctx.fill();
+  ctx.fillStyle = C.orange; ctx.fillRect(-13, -12, 26, 3);
+  ctx.restore();
+}
+// la carabine de Mamie : long canon, crosse ; (x, y) = main
+function rifle(x, y, flash){
+  ctx.save(); ctx.translate(x, y);
+  ctx.fillStyle = C.ink; ctx.fillRect(0, -3, 50, 5);
+  ctx.fillStyle = '#777'; ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(-16, -1); ctx.lineTo(-16, 9); ctx.lineTo(4, 3); ctx.fill();
+  if (flash){ ctx.fillStyle = C.orange; ctx.beginPath(); ctx.moveTo(52, 0); ctx.lineTo(60, -7); ctx.lineTo(57, -1); ctx.lineTo(68, 0); ctx.lineTo(57, 2); ctx.lineTo(60, 7); ctx.fill(); }
   ctx.restore();
 }
 // chapeau de cow-boy : bord aux côtés relevés + calotte creusée ; (x, y) = dessous du bord
@@ -303,13 +392,13 @@ function button(id, x, y, w, h, label, opts = {}){
 
 // ---------- Les bandits du duel (textes à valider) ----------
 const BANDITS = [
-  { name: 'Joe la Fouine',        intro: ["T'es pas assez rapide, gamin."], win: "Je te l'avais dit, gamin.", lose: "Bon... t'étais assez rapide." },
-  { name: 'Billy Deux-Gâchettes', intro: ["J'ai deux pistolets. Toi, un seul."], win: "Deux contre un, c'était joué d'avance.", lose: "J'ai confondu les gâchettes." },
-  { name: 'Mamie Winchester',     intro: ['Dépêche-toi, ma tarte est au four.', "J'ai battu ton grand-père. Et ton père."], win: 'Va manger ta soupe.', lose: 'Aïe, mes rhumatismes...' },
-  { name: 'Plaintus',             intro: ['Moi je voulais pas venir.'], win: 'Bon, je peux rentrer maintenant ?', lose: 'Je vais le dire à ma mère.' },
-  { name: 'Señor Siesta',         intro: ['Réveille-moi quand ça sonne.'], win: "Zzz... hein ? J'ai gagné ?", lose: 'Bon... je retourne dormir.' },
+  { name: 'Joe la Fouine',        intro: ["T'es pas assez rapide, gamin."], win: "Je te l'avais dit, gamin.", lose: "Bon... t'étais assez rapide.", look: 'fouine' },
+  { name: 'Billy Deux-Gâchettes', intro: ["J'ai deux pistolets. Toi, un seul."], win: "Deux contre un, c'était joué d'avance.", lose: "J'ai confondu les gâchettes.", look: 'billy' },
+  { name: 'Mamie Winchester',     intro: ['Dépêche-toi, ma tarte est au four.', "J'ai battu ton grand-père. Et ton père."], win: 'Va manger ta soupe.', lose: 'Aïe, mes rhumatismes...', look: 'mamie' },
+  { name: 'Plaintus',             intro: ['Moi je voulais pas venir.'], win: 'Bon, je peux rentrer maintenant ?', lose: 'Je vais le dire à ma mère.', look: 'kid' },
+  { name: 'Señor Siesta',         intro: ['Réveille-moi quand ça sonne.'], win: "Zzz... hein ? J'ai gagné ?", lose: 'Bon... je retourne dormir.', look: 'siesta' },
   { name: 'El Gordo Guapo',       intro: ['Mon chapeau est plus grand que le tien.'], win: 'Grand chapeau, grand champion, gros bidon.', lose: 'Pas le chapeau ! Pas le chapeau !', look: 'gordo' },
-  { name: 'Doc Tremblote',        intro: ['Mes mains tremblent... ou pas.'], win: 'Ah ben non, elles tremblaient pas.', lose: 'Ah ben si, elles tremblaient.' },
+  { name: 'Doc Tremblote',        intro: ['Mes mains tremblent... ou pas.'], win: 'Ah ben non, elles tremblaient pas.', lose: 'Ah ben si, elles tremblaient.', look: 'doc' },
   // le gag secret : un cow-boy qui a un petit air de chat
   { name: 'Rintintus',            intro: ['Je retombe toujours sur mes bottes.', "J'ai l'œil, la nuit comme le jour."], win: 'Miaou... euh, yiiiha !', lose: 'Bon. Je vais aller ronronner... euh, ronchonner.', look: 'chat' },
 ];
@@ -459,13 +548,16 @@ function drawDuel(){
     const k = Math.min(1, d.t / .35);
     // il part à la renverse en reculant, pour rester dans l'écran
     cowboy(270 - k * 50, 520 - Math.sin(k * Math.PI) * 30, 1.1, -1, { bandit: true, look: d.bandit.look, rot: k * Math.PI / 2, hat: false });
-    if (d.hatFly) { ctx.save(); ctx.translate(d.hatFly.x, d.hatFly.y); ctx.rotate(d.hatFly.a); hat(0, 0, d.bandit.look === 'gordo' ? 1.65 : 1.1, C.black, null, d.bandit.look === 'chat'); ctx.restore(); }
+    if (d.hatFly) { ctx.save(); ctx.translate(d.hatFly.x, d.hatFly.y); ctx.rotate(d.hatFly.a); ctx.scale(1.1, 1.1); lookHat(LOOKS[d.bandit.look] || LOOKS.bandit, 0, 0, true); ctx.restore(); }
     if (d.t < .25){ ctx.fillStyle = C.orange; for (let x = 150; x < 240; x += 12) ctx.fillRect(x, 445, 6, 2); }
   } else if (d.state === 'lost' && !d.early || (d.state === 'over' && !d.early)){
     cowboy(270, 520, 1.1, -1, { bandit: true, look: d.bandit.look, pose: 'aim', flash: d.state === 'lost' && d.t < .12 });
   } else {
     const shake = d.state === 'lost' && d.early ? Math.sin(T * 40) * 2 : 0;
     cowboy(270 + shake, 520, 1.1, -1, { bandit: true, look: d.bandit.look });
+    // Señor Siesta fait la sieste en attendant la cloche
+    if (d.bandit.look === 'siesta' && (d.state === 'intro' || d.state === 'wait'))
+      [0, 1, 2].forEach(i => { const k = (T * .6 + i / 3) % 1; drawText('z', 290 + k * 30, 400 - k * 50, 2 + Math.round(k * 2), C.light); });
   }
   // bas : messages
   const mx = 180, my = 580;
