@@ -101,7 +101,7 @@ function wrap(s, px, maxW){
 
 // ---------- Sauvegarde ----------
 const KEY = 'yiiiha-v1';
-let SAVE = { best: { duel: 0, wanted: 0 }, bestBandits: { duel: 0, wanted: 0 }, music: true, sound: true };
+let SAVE = { best: { duel: 0, wanted: 0, lasso: 0, saloon: 0, cans: 0 }, bestBandits: { duel: 0, wanted: 0 }, music: true, sound: true };
 try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d) SAVE = Object.assign(SAVE, d, { best: Object.assign(SAVE.best, d.best), bestBandits: Object.assign(SAVE.bestBandits, d.bestBandits) }); } catch(e){}
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(SAVE)); } catch(e){} }
 
@@ -132,6 +132,17 @@ function burst(t, d, v, type, freq, q = 1, bus = sfxBus){
 }
 const canSfx = () => SAVE.sound && actx;
 const sfx = {
+  // lasso qui tourne, lasso lancé
+  swish(){ if (!canSfx()) return; const t = actx.currentTime; const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(); f.type = 'bandpass'; f.Q.value = 3; f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(1600, t + .2); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.05, t + .08); g.gain.exponentialRampToValueAtTime(.0001, t + .22); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + .25); },
+  whiff(){ if (!canSfx()) return; tone(actx.currentTime, 900, .2, .04, 'sine', 300); },
+  // meuh (plus aigu pour le veau)
+  moo(small){ if (!canSfx()) return; const t = actx.currentTime, f = small ? 210 : 140; tone(t, f, .7, .09, 'sawtooth', f * .75); tone(t, f * 1.5, .6, .03, 'triangle', f * 1.1); },
+  // le putois
+  pfft(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .9, .12, 'lowpass', 400, .5); tone(t + .1, 120, .5, .05, 'square', 70); },
+  // le verre glisse, le client boit, le verre se casse
+  slide(){ if (!canSfx()) return; const t = actx.currentTime; const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(); f.type = 'bandpass'; f.frequency.value = 2200; f.Q.value = 1; g.gain.setValueAtTime(.05, t); g.gain.exponentialRampToValueAtTime(.0001, t + .9); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + 1); },
+  gulp(){ if (!canSfx()) return; const t = actx.currentTime; [0, .22, .44].forEach(d => tone(t + d, 260, .12, .06, 'sine', 160)); tone(t + .8, 520, .3, .05, 'triangle', 880); },
+  crash(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .5, .25, 'highpass', 3000, .7); [2637, 3520, 4186].forEach((f, i) => tone(t + i * .03, f, .25, .03)); },
   // dynamite : gros boum grave
   boom(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, 1.2, .6, 'lowpass', 600, .7); tone(t, 90, .8, .3, 'sine', 30); burst(t + .05, .4, .2, 'lowpass', 2500, .5); },
   // mauvaise personne : petit grognement
@@ -488,6 +499,8 @@ function go(s){
   fuse(false);
   if (s === 'duel') { Music.set('duel'); startDuelRun(); } else { Music.set('town'); wind(false); }
   if (s === 'wanted') startWanted();
+  if (s === 'lasso') startLasso();
+  if (s === 'saloon') startSaloon();
 }
 function startDuelRun(){ duel.n = 1; duel.score = 0; duel.disp = 0; duel.newBest = false; newRound(); }
 function newRound(){
@@ -507,6 +520,8 @@ function update(dt){
     else if ((weedT -= dt) <= 0) { weed = { x: -40, a: 0 }; weedT = 6 + Math.random() * 6; }
   }
   if (scene === 'wanted') { updateWanted(dt); return; }
+  if (scene === 'lasso') { updateLasso(dt); return; }
+  if (scene === 'saloon') { updateSaloon(dt); return; }
   if (scene !== 'duel') return;
   const d = duel; d.t += dt;
   // le score monte en comptant
@@ -584,10 +599,10 @@ function drawTitle(){
 const GAMES = [
   { id: 'duel', name: 'Duel de Midi', open: true },
   { id: 'wanted', name: 'Avis de recherche', open: true },
+  { id: 'lasso', name: 'Le Lasso', open: true },
+  { id: 'saloon', name: 'Le Saloon', open: true },
   { id: 'cans', name: 'Boîtes de conserve' },
-  { id: 'lasso', name: 'Le Lasso' },
   { id: 'coach', name: 'La Diligence' },
-  { id: 'saloon', name: 'Le Saloon' },
 ];
 function drawTown(){
   drawText('La ville', 180, 60, 4, C.ink, 'center');
@@ -705,7 +720,7 @@ function draw(){
   ctx.fillStyle = C.white; ctx.fillRect(0, 0, cvs.width, cvs.height);
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
   buttons = [];
-  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else drawDuel();
+  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else if (scene === 'lasso') drawLasso(); else if (scene === 'saloon') drawSaloon(); else drawDuel();
   placePseudo();
   if (askReset) { buttons = []; drawReset(); }
   // fondu en entrant dans un écran
@@ -891,6 +906,281 @@ function fuse(on){
   } else if (!on && fuseNode){ const x = fuseNode; fuseNode = null; x.g.gain.setTargetAtTime(.0001, actx.currentTime, .05); setTimeout(() => { try { x.n.stop(); } catch(e){} }, 300); }
 }
 
+// ---------- Petits outils communs aux mini-jeux ----------
+// textes qui s'envolent (« +100 », « Pouah ! »)
+let floaters = [];
+function floater(s, x, y, col){ floaters.push({ s, x, y, col: col || C.orange, t: 0 }); }
+function updateFloaters(dt){ floaters.forEach(f => { f.t += dt; f.y -= 40 * dt; }); floaters = floaters.filter(f => f.t < 1); }
+function drawFloaters(){ floaters.forEach(f => { ctx.globalAlpha = 1 - clamp01((f.t - .6) / .4); drawText(f.s, Math.max(50, Math.min(W - 50, f.x)), f.y, 3, f.col, 'center'); ctx.globalAlpha = 1; }); }
+// écran de fin commun
+function drawEndScreen(title, line, big, rec, againId){
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(0, 0, W, H);
+  drawText(title, 180, 150, 4, C.ink, 'center');
+  hat(180, 135, 1, C.orange);
+  drawText(line, 180, 226, 2, C.mid, 'center');
+  drawText(big, 180, 262, 7, C.ink, 'center');
+  drawText(rec, 180, 336, 2, C.mid, 'center');
+  button(againId, 70, 440, 220, 56, 'Rejouer', { main: true });
+  button('board', 70, 516, 220, 48, 'Classement');
+  button('town', 70, 584, 220, 48, 'La ville');
+}
+// la grande horloge du haut : une barre qui se vide
+function drawTimeBar(left, max){
+  ctx.fillStyle = C.ground; ctx.fillRect(20, 70, 320, 8);
+  ctx.fillStyle = left < 8 ? C.orange : C.mid; ctx.fillRect(20, 70, 320 * clamp01(left / max), 8);
+}
+
+// ---------- Mini-jeu : Le Lasso ----------
+// Des bêtes traversent le pré sur 3 rangées. Garde le doigt appuyé : le lasso tourne et le rond orange
+// monte et descend entre les rangées. Lâche quand le rond est sur une bête pour l'attraper.
+const LANES = [300, 395, 490], LANE_SC = [.62, .8, 1], LASSO_TIME = 45;
+const BEASTS = {
+  vache:  { pts: 100, speed: 70,  w: 56, name: 'Vache' },
+  veau:   { pts: 150, speed: 95,  w: 40, name: 'Veau' },
+  poule:  { pts: 300, speed: 190, w: 26, name: 'Poule' },
+  putois: { pts: -200, speed: 110, w: 36, name: 'Putois' },
+};
+const LS = { state: 'play', t: 0, time: LASSO_TIME, score: 0, disp: 0, beasts: [], spawn: 0, hold: false, holdT: 0, rope: null, combo: 0, stink: 0, caught: 0, newBest: false, swishT: 0 };
+function startLasso(){ Object.assign(LS, { state: 'play', t: 0, time: LASSO_TIME, score: 0, disp: 0, beasts: [], spawn: .4, hold: false, holdT: 0, rope: null, combo: 0, stink: 0, caught: 0, newBest: false, swishT: 0 }); floaters = []; }
+// le rond orange monte puis redescend tant qu'on garde le doigt appuyé
+function lassoAim(){ const k = (LS.holdT * .85) % 2, p = k < 1 ? k : 2 - k; return LANES[2] + (LANES[0] - LANES[2]) * p; }
+const laneOf = y => y < 347 ? 0 : (y < 442 ? 1 : 2);
+function updateLasso(dt){
+  const L = LS; L.t += dt; updateFloaters(dt);
+  L.disp += (L.score - L.disp) * Math.min(1, dt * 5); if (Math.abs(L.score - L.disp) < 1) L.disp = L.score;
+  if (L.state === 'play'){
+    L.time -= dt;
+    if (L.time <= 0) { L.time = 0; L.state = 'end'; L.t = 0; L.hold = false; sfx.bell(); }
+    if (L.stink > 0) L.stink -= dt;
+    if (L.hold) { L.holdT += dt; if ((L.swishT -= dt) <= 0) { L.swishT = .28; sfx.swish(); } }
+    // de nouvelles bêtes arrivent, de plus en plus vite
+    if ((L.spawn -= dt) <= 0){
+      const kind = pick(['vache', 'vache', 'veau', 'veau', 'poule', 'putois']), lane = Math.floor(Math.random() * 3), dir = Math.random() < .5 ? 1 : -1;
+      const faster = 1 + (LASSO_TIME - L.time) / 50;
+      L.beasts.push({ kind, lane, dir, x: dir > 0 ? -50 : W + 50, v: BEASTS[kind].speed * faster * (.85 + Math.random() * .3), ph: Math.random() * 6 });
+      L.spawn = .6 + Math.random() * .8;
+    }
+  } else if (L.state === 'end' && L.t > 1.4) endLasso();
+  L.beasts.forEach(b => {
+    if (b.pulled) { b.pt += dt; const k = ease.out(clamp01(b.pt / .5)); b.x = b.px + (180 - b.px) * k; b.y = b.py + (620 - b.py) * k; }
+    else if (L.state === 'play') { b.x += b.dir * b.v * dt; b.ph += dt * 10; }
+  });
+  L.beasts = L.beasts.filter(b => b.pulled ? b.pt < .55 : (b.x > -70 && b.x < W + 70));
+  if (L.rope) { L.rope.t += dt; if (!L.rope.done && L.rope.t >= L.rope.dur) ropeLand(); if (L.rope.done && L.rope.t > L.rope.dur + .45) L.rope = null; }
+}
+function lassoDown(){ const L = LS; if (L.state !== 'play' || L.rope || L.stink > 0) return; L.hold = true; L.holdT = 0; L.swishT = 0; }
+function lassoUp(){
+  const L = LS; if (!L.hold) return; L.hold = false;
+  const ty = lassoAim(); L.rope = { t: 0, ty, dur: .18 + (LANES[2] + 70 - ty) / 900, done: false }; sfx.whiff();
+}
+function ropeLand(){
+  const L = LS, r = L.rope; r.done = true;
+  const lane = laneOf(r.ty);
+  const b = L.beasts.find(q => !q.pulled && q.lane === lane && Math.abs(LANES[lane] - r.ty) < 40 && Math.abs(q.x - 180) < BEASTS[q.kind].w * LANE_SC[lane] / 2 + 20);
+  if (!b) { L.combo = 0; floater('Raté !', 180, r.ty - 30, C.light); return; }
+  const B = BEASTS[b.kind]; b.pulled = true; b.pt = 0; b.px = b.x; b.py = LANES[lane]; r.caught = b;
+  if (b.kind === 'putois') {
+    L.score = Math.max(0, L.score + B.pts); L.combo = 0; L.stink = 1.6; sfx.pfft();
+    floater('Pouah !', 180, 520, C.ink); floater(String(B.pts), 180, 560, C.orange);
+  } else {
+    L.combo++; const mult = Math.min(3, 1 + Math.floor((L.combo - 1) / 3)), pts = B.pts * mult;
+    L.score += pts; L.caught++;
+    floater('+' + pts, b.x, LANES[lane] - 60 * LANE_SC[lane]);
+    if (b.kind === 'poule') sfx.cluck(); else sfx.moo(b.kind === 'veau');
+  }
+}
+function endLasso(){
+  const L = LS;
+  if (L.score > (SAVE.best.lasso || 0)) { SAVE.best.lasso = L.score; L.newBest = true; }
+  save(); L.state = 'over'; L.t = 0; sfx.lose(); lbSend();
+}
+// les bêtes, en blocs ; (x, y) = sabots, dir 1 = va vers la droite
+function beast(kind, x, y, sc, dir, ph){
+  ctx.save(); ctx.translate(x, y); ctx.scale(sc * dir, sc);
+  const r = (a, b, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(a, b, w, h); }, st = Math.sin(ph) * 3;
+  if (kind === 'vache' || kind === 'veau'){
+    const k = kind === 'veau' ? .72 : 1; ctx.scale(k, k);
+    r(-22 + st, -8, 5, 8, C.dark); r(-12 - st, -8, 5, 8, C.dark); r(8 + st, -8, 5, 8, C.dark); r(18 - st, -8, 5, 8, C.dark);
+    r(-28, -36, 56, 30, C.dark); r(-26, -34, 52, 26, '#f2f2f2');
+    r(-18, -34, 12, 10, C.dark); r(4, -26, 14, 10, C.dark); r(-24, -16, 8, 6, C.dark);
+    r(-32, -34, 4, 16, C.dark);
+    r(22, -46, 18, 18, C.dark); r(24, -44, 14, 14, '#f2f2f2'); r(32, -34, 8, 6, C.light); r(30, -40, 3, 3, C.ink);
+    r(22, -50, 4, 5, C.light); r(36, -50, 4, 5, C.light);
+  } else if (kind === 'poule'){
+    const hop = Math.abs(Math.sin(ph * 1.5)) * 3;
+    r(-4, -8 - hop, 2, 8, C.dark); r(3, -8 - hop, 2, 8, C.dark);
+    r(-11, -22 - hop, 22, 15, C.light); r(-14, -26 - hop, 6, 8, C.light);
+    r(6, -32 - hop, 9, 11, C.light); r(15, -28 - hop, 5, 3, C.orange); r(8, -36 - hop, 5, 4, C.orange); r(11, -29 - hop, 2, 2, C.ink);
+  } else {
+    r(-12 + st, -6, 4, 6, C.ink); r(8 - st, -6, 4, 6, C.ink);
+    r(-18, -18, 36, 13, C.ink); r(-18, -18, 36, 3, C.white);
+    r(-30, -36, 12, 26, C.ink); r(-27, -36, 4, 22, C.white);
+    r(16, -20, 12, 10, C.ink); r(28, -16, 3, 3, C.dark); r(22, -17, 2, 2, C.white);
+  }
+  ctx.restore();
+}
+function drawLasso(){
+  const L = LS;
+  // le pré : mesas et soleil au loin, clôture, trois rangées
+  ctx.fillStyle = '#f0f0f0'; ctx.fillRect(30, 170, 70, 56); ctx.fillRect(40, 156, 46, 16); ctx.fillRect(230, 186, 110, 40); ctx.fillRect(250, 172, 60, 16);
+  ctx.fillStyle = C.ground; ctx.fillRect(150, 120, 30, 30);
+  ctx.fillStyle = C.ground; for (let x = 10; x < W; x += 40) ctx.fillRect(x, 226, 5, 34); ctx.fillRect(0, 234, W, 4); ctx.fillRect(0, 248, W, 4);
+  LANES.forEach(y => { ctx.fillStyle = '#f2f2f2'; ctx.fillRect(0, y, W, 3); });
+  drawText(String(Math.round(L.disp)), W - 20, 22, 4, C.ink, 'right');
+  drawText('Record ' + (SAVE.best.lasso || 0), W - 20, 54, 2, C.light, 'right');
+  drawText('Lasso', 20, 28, 2, C.mid);
+  if (L.combo >= 3) drawText('x' + Math.min(3, 1 + Math.floor((L.combo - 1) / 3)), 20, 48, 3, C.orange);
+  drawTimeBar(L.time, LASSO_TIME);
+  // les bêtes, des plus lointaines aux plus proches
+  L.beasts.filter(b => !b.pulled).sort((a, b) => a.lane - b.lane).forEach(b => beast(b.kind, b.x, LANES[b.lane], LANE_SC[b.lane], b.dir, b.ph));
+  // le rond orange qui vise
+  if (L.hold) {
+    const ay = lassoAim(), sc = LANE_SC[laneOf(ay)];
+    ctx.strokeStyle = C.orange; ctx.lineWidth = 3; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(180, 560); ctx.lineTo(180, ay); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.ellipse(180, ay - 10 * sc, 30 * sc, 12 * sc, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  // la corde qui vole, puis qui ramène la bête
+  if (L.rope) {
+    const r = L.rope, k = ease.out(clamp01(r.t / r.dur)), back = r.done && !r.caught ? clamp01((r.t - r.dur) / .4) : 0;
+    let lx = 180, ly = 556 + (r.ty - 10 - 556) * k * (1 - back);
+    if (r.caught) { lx = r.caught.x; ly = r.caught.y - 18; }
+    ctx.strokeStyle = C.dark; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(196, 600); ctx.lineTo(lx, ly); ctx.stroke();
+    ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(lx, ly, r.caught ? 14 : 22, r.caught ? 6 : 8, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  L.beasts.filter(b => b.pulled).forEach(b => beast(b.kind, b.x, b.y, LANE_SC[b.lane], b.dir, 0));
+  // le cow-boy, de face, en bas
+  ctx.fillStyle = C.ground; ctx.fillRect(0, 690, W, 4);
+  cowboy(180, 690, .95, 1, { seed: 2, pose: L.rope && L.rope.caught ? 'aim' : 'idle', armA: -1.2 });
+  if (L.hold) {
+    // le lasso tourne au-dessus de la tête
+    const a = T * 14; ctx.strokeStyle = C.dark; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(180 + Math.cos(a) * 8, 552, 30, 9, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(196, 630); ctx.lineTo(180 + Math.cos(a) * 30, 552 + Math.sin(a) * 9); ctx.stroke();
+  }
+  if (L.stink > 0) {
+    // le putois a laissé son parfum : le cow-boy se bouche le nez
+    ctx.fillStyle = '#d6d6d6'; ctx.fillRect(172, 602, 16, 8);
+    for (let i = 0; i < 6; i++) { const a = T * 2 + i, d = 40 + Math.sin(T * 3 + i) * 8; ctx.globalAlpha = .55; ctx.fillStyle = '#a9bf8e'; ctx.fillRect(180 + Math.cos(a) * d - 7, 610 + Math.sin(a) * d * .5 - 7, 14, 14); ctx.globalAlpha = 1; }
+  }
+  drawParts(); drawFloaters();
+  if (L.state === 'play' && L.t < 2.2 && !L.caught) drawText('Garde le doigt appuyé, lâche sur une bête !', 180, 660, 2, C.mid, 'center');
+  if (L.state === 'end') drawText('Temps écoulé !', 180, 160, 4, C.ink, 'center');
+  if (L.state === 'over') {
+    drawEndScreen('Fin du lasso', 'Bêtes attrapées : ' + L.caught, String(L.score), 'Record : ' + (SAVE.best.lasso || 0), 'againL');
+    if (L.newBest && Math.floor(T * 3) % 2 === 0) drawText('Nouveau record !', 180, 376, 3, C.orange, 'center');
+  }
+}
+
+// ---------- Mini-jeu : Le Saloon (au lait) ----------
+// Tu es le barman. Fais glisser le verre de lait sur le comptoir : il doit arriver doucement jusqu'à un client.
+// Trop fort, il file au bout et se casse. Trop doucement, il s'arrête avant. Un client qui attend trop s'en va.
+const SEATS = [150, 200, 250, 300, 340], BAR_Y = 540, CATCH_V = 170, FRICTION = 300;
+const SERVED = ['Merci, patron !', 'Ah, du bon lait !', 'Santé !', 'Comme chez maman.'];
+const TOO_SOFT = ['Trop doucement !', "J'ai le bras court, moi !"];
+const TOO_HARD = ['Trop fort !', 'Hé, mon lait !'];
+const LEAVING = ["Je m'en vais !", 'Service lent !'];
+const SA = { state: 'play', t: 0, lives: 3, score: 0, disp: 0, served: 0, guests: [], glass: null, drag: null, spawn: 0, newBest: false };
+function startSaloon(){ Object.assign(SA, { state: 'play', t: 0, lives: 3, score: 0, disp: 0, served: 0, guests: [], glass: null, drag: null, spawn: .8, newBest: false }); floaters = []; }
+function say(g, s){ g.line = s; g.lineT = 1.4; }
+function updateSaloon(dt){
+  const S = SA; S.t += dt; updateFloaters(dt);
+  S.disp += (S.score - S.disp) * Math.min(1, dt * 5); if (Math.abs(S.score - S.disp) < 1) S.disp = S.score;
+  S.guests.forEach(g => { g.t += dt; if (g.lineT > 0) g.lineT -= dt; });
+  if (S.state === 'play'){
+    // un nouveau client s'assoit sur un tabouret libre
+    if ((S.spawn -= dt) <= 0){
+      const free = SEATS.filter(x => !S.guests.some(g => g.x === x));
+      if (free.length) { const max = Math.max(5, 12 - S.served * .35); S.guests.push({ x: pick(free), L: randomLook(), patience: max, max, state: 'wait', t: 0, line: '', lineT: 0, seed: Math.random() * 9 }); }
+      S.spawn = Math.max(1.1, 3 - S.served * .08) * (.8 + Math.random() * .4);
+    }
+    S.guests.forEach(g => {
+      if (g.state === 'wait') { g.patience -= dt; if (g.patience <= 0) { g.state = 'leave'; g.t = 0; say(g, pick(LEAVING)); loseLife(); sfx.grumble(); } }
+      else if (g.state === 'drink' && g.t > 1.3) { g.state = 'happy'; g.t = 0; say(g, pick(SERVED)); }
+    });
+    S.guests = S.guests.filter(g => !((g.state === 'leave' || g.state === 'happy') && g.t > 1.5));
+    // le verre glisse et ralentit
+    const gl = S.glass;
+    if (gl && gl.state === 'slide') {
+      const x0 = gl.x; gl.x += gl.v * dt; gl.v = Math.max(0, gl.v - FRICTION * dt);
+      // il passe devant des clients : lent, le client l'attrape ; rapide, il râle
+      S.guests.filter(g => g.state === 'wait' && x0 < g.x - 8 && gl.x >= g.x - 8).forEach(g => {
+        if (gl.state !== 'slide') return;
+        if (gl.v < CATCH_V) { gl.state = 'gone'; g.state = 'drink'; g.t = 0; S.served++; const pts = 100 + Math.round(100 * g.patience / g.max); S.score += pts; floater('+' + pts, g.x, BAR_Y - 140); sfx.gulp(); }
+        else if (!gl.warned.includes(g)) { gl.warned.push(g); say(g, pick(TOO_HARD)); }
+      });
+      if (gl.state === 'slide' && gl.x > 352) { gl.state = 'fall'; gl.t = 0; }
+      else if (gl.state === 'slide' && gl.v <= 0) {
+        gl.state = 'stop'; gl.t = 0; const next = S.guests.find(g => g.state === 'wait' && g.x > gl.x);
+        if (next) say(next, pick(TOO_SOFT));
+      }
+    }
+    if (gl && gl.state === 'fall') { gl.t += dt; if (gl.t > .35 && !gl.broke) { gl.broke = true; sfx.crash(); puff(350, BAR_Y + 120, 8, { spread: 120, vy: -60, r: 3, max: .6, grow: 0, col: C.light }); floater('Crash !', 290, BAR_Y - 40); loseLife(); } if (gl.t > .6) S.glass = null; }
+    else if (gl && gl.state === 'stop') { gl.t += dt; if (gl.t > 1) S.glass = null; }
+    else if (gl && gl.state === 'gone') S.glass = null;
+  } else if (S.state === 'end' && S.t > 1.4) endSaloon();
+}
+function loseLife(){ const S = SA; S.lives--; if (S.lives <= 0 && S.state === 'play') { S.lives = 0; S.state = 'end'; S.t = 0; } }
+function endSaloon(){
+  const S = SA;
+  if (S.score > (SAVE.best.saloon || 0)) { SAVE.best.saloon = S.score; S.newBest = true; }
+  save(); S.state = 'over'; S.t = 0; sfx.lose(); lbSend();
+}
+// glisser le doigt vers la droite pour lancer le verre
+function saloonDown(p){ const S = SA; if (S.state !== 'play' || S.glass) return; S.drag = { pts: [{ x: p.x, t: performance.now() }] }; }
+function saloonMove(p){ const S = SA; if (!S.drag) return; S.drag.pts.push({ x: p.x, t: performance.now() }); if (S.drag.pts.length > 8) S.drag.pts.shift(); }
+function saloonUp(p){
+  const S = SA, d = S.drag; S.drag = null; if (!d || S.glass) return;
+  d.pts.push({ x: p.x, t: performance.now() });
+  const a = d.pts[0], b = d.pts[d.pts.length - 1], dt = Math.max(16, b.t - a.t) / 1000, v = (b.x - a.x) / dt;
+  if (v < 60) return;
+  S.glass = { x: 78, v: Math.min(1100, v * 1.15), state: 'slide', warned: [], t: 0 }; sfx.slide();
+}
+function milkGlass(x, y, s){
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = C.ink; ctx.fillRect(-8, -22, 16, 22); ctx.fillStyle = '#fafafa'; ctx.fillRect(-6, -20, 12, 18); ctx.fillStyle = C.ground; ctx.fillRect(-6, -20, 12, 3);
+  ctx.restore();
+}
+function drawSaloon(){
+  const S = SA;
+  // le mur du saloon : étagères avec des bouteilles de lait, l'enseigne
+  ctx.fillStyle = C.ground; ctx.fillRect(0, 260, W, 4); ctx.fillRect(0, 350, W, 4);
+  for (let i = 0; i < 9; i++) { const x = 20 + i * 38; ctx.fillStyle = C.faint; ctx.fillRect(x, 230, 14, 30); ctx.fillRect(x + 4, 220, 6, 10); ctx.fillRect(x + 8, 322, 12, 28); ctx.fillRect(x + 11, 312, 6, 10); }
+  drawText('SALOON', 180, 140, 5, C.orange, 'center');
+  drawText(String(Math.round(S.disp)), W - 20, 22, 4, C.ink, 'right');
+  drawText('Record ' + (SAVE.best.saloon || 0), W - 20, 54, 2, C.light, 'right');
+  for (let i = 0; i < 3; i++) hat(36 + i * 40, 46, .7, i < S.lives ? C.dark : C.ground);
+  // les clients, assis derrière le comptoir
+  S.guests.forEach(g => {
+    const leaving = (g.state === 'leave' || g.state === 'happy') && g.t > .6, off = leaving ? ease.out(clamp01((g.t - .6) / .9)) * 260 : 0, arrive = 1 - ease.out(clamp01(g.t / .35));
+    if (g.state === 'wait' && g.t < .4) ctx.globalAlpha = 1 - arrive;
+    cowboy(g.x + off, BAR_Y + 20 + arrive * 20, .85, -1, { bandit: true, L: Object.assign({}, g.L, { fat: false, sc: 1 }), seed: g.seed });
+    ctx.globalAlpha = 1;
+    // il boit son verre, puis garde une moustache de lait
+    if (g.state === 'drink') milkGlass(g.x - 14, BAR_Y - 24 - Math.min(1, g.t * 3) * 14, .8);
+    if (g.state === 'happy') { ctx.fillStyle = C.white; ctx.fillRect(g.x + off - 9, BAR_Y - 52, 16, 4); }
+    if (g.state === 'wait') { const k = g.patience / g.max; ctx.fillStyle = C.ground; ctx.fillRect(g.x - 16, BAR_Y - 100, 32, 5); ctx.fillStyle = k < .3 ? C.orange : C.mid; ctx.fillRect(g.x - 16, BAR_Y - 100, 32 * k, 5); }
+  });
+  // le barman (toi), à gauche
+  cowboy(42, BAR_Y + 20, .85, 1, { seed: 2 });
+  // le comptoir
+  ctx.fillStyle = C.mid; ctx.fillRect(0, BAR_Y, W, 8); ctx.fillStyle = C.dark; ctx.fillRect(0, BAR_Y + 8, W, 90); ctx.fillStyle = C.ink; for (let x = 20; x < W; x += 60) ctx.fillRect(x, BAR_Y + 20, 4, 70);
+  ctx.fillStyle = C.ground; ctx.fillRect(0, BAR_Y + 98, W, 4);
+  // le verre
+  const gl = S.glass;
+  if (gl) {
+    if (gl.state === 'fall') { const k = clamp01(gl.t / .35); ctx.save(); ctx.translate(gl.x + k * 20, BAR_Y + k * k * 130); ctx.rotate(k * 2); milkGlass(0, 0, 1); ctx.restore(); }
+    else { ctx.globalAlpha = gl.state === 'stop' ? 1 - clamp01((gl.t - .6) / .4) : 1; milkGlass(gl.x, BAR_Y, 1); ctx.globalAlpha = 1; }
+  } else if (S.state === 'play') milkGlass(78, BAR_Y, 1);
+  S.guests.forEach(g => { if (g.lineT > 0) bubble(g.line, g.x, BAR_Y - 108); });
+  drawParts(); drawFloaters();
+  if (S.state === 'play' && S.t < 3 && !S.served) drawText('Glisse le doigt vers la droite', 180, 670, 2, C.mid, 'center');
+  if (S.state === 'end') drawText('Fermeture !', 180, 160, 4, C.ink, 'center');
+  if (S.state === 'over') {
+    drawEndScreen('Fin du service', 'Verres servis : ' + S.served, String(S.score), 'Record : ' + (SAVE.best.saloon || 0), 'againS');
+    if (S.newBest && Math.floor(T * 3) % 2 === 0) drawText('Nouveau record !', 180, 376, 3, C.orange, 'center');
+  }
+}
+
 // ---------- Pseudo (choisi une seule fois, au premier lancement) ----------
 const pseudoEl = document.getElementById('pseudo');
 let nameErr = '';
@@ -925,7 +1215,7 @@ const LB_URL = 'https://script.google.com/macros/s/AKfycbwoeVB6kM4BwQj6q0EyTLvaV
 let lbData = null, lbState = 'idle', boardFrom = 'title', boardGame = 'duel';
 function lbSend(){
   if (!SAVE.name || !LB_URL.startsWith('https')) return;
-  const body = JSON.stringify({ id: SAVE.id, name: SAVE.name, duel: SAVE.best.duel, bandits: SAVE.bestBandits.duel, wanted: SAVE.best.wanted || 0, caught: SAVE.bestBandits.wanted || 0 });
+  const body = JSON.stringify({ id: SAVE.id, name: SAVE.name, duel: SAVE.best.duel, bandits: SAVE.bestBandits.duel, wanted: SAVE.best.wanted || 0, caught: SAVE.bestBandits.wanted || 0, lasso: SAVE.best.lasso || 0, saloon: SAVE.best.saloon || 0, cans: SAVE.best.cans || 0 });
   try { fetch(LB_URL, { method: 'POST', body, keepalive: true }).catch(() => {}); } catch(e){}
 }
 async function lbLoad(){
@@ -940,8 +1230,7 @@ async function lbLoad(){
 function drawBoard(){
   drawText('Classement', 180, 50, 4, C.ink, 'center');
   hat(180, 40, 1, C.orange);
-  button('tab-duel', 30, 84, 145, 36, 'Duel', { main: boardGame === 'duel' });
-  button('tab-wanted', 185, 84, 145, 36, 'Wanted', { main: boardGame === 'wanted' });
+  [['duel', 'Duel'], ['wanted', 'Wanted'], ['lasso', 'Lasso'], ['saloon', 'Saloon']].forEach(([g, n], i) => button('tab-' + g, 12 + i * 85, 84, 80, 36, n, { main: boardGame === g }));
   // même pseudo = même joueur (ex. Safari et l'icône de l'écran d'accueil) : on garde son meilleur score ;
   // ceux qui n'ont pas encore marqué de points n'apparaissent pas
   const best = {};
@@ -975,28 +1264,36 @@ cvs.addEventListener('pointerdown', e => {
   // en duel, toucher n'importe où = tirer (le plus vite possible, dès l'appui)
   if (scene === 'duel' && (duel.state === 'wait' || duel.state === 'go')) { shoot(); return; }
   if (scene === 'wanted' && WT.state === 'play') { tapWanted(p); return; }
+  if (scene === 'lasso' && LS.state === 'play') { lassoDown(); return; }
+  if (scene === 'saloon' && SA.state === 'play') { saloonDown(p); return; }
   const b = hit(p); pressId = b ? b.id : null;
   // mode test caché : toucher 5 fois le logo
   if (scene === 'title' && !askReset && p.y > 150 && p.y < 320){ const n = performance.now(); titleTaps = n - titleTapT < 600 ? titleTaps + 1 : 1; titleTapT = n; if (titleTaps >= 5) { titleTaps = 0; testMode(); } }
 });
+cvs.addEventListener('pointermove', e => { if (scene === 'saloon') saloonMove(toWorld(e)); });
 cvs.addEventListener('pointerup', e => {
-  const p = toWorld(e), b = hit(p), id = pressId; pressId = null;
+  const p = toWorld(e);
+  if (scene === 'lasso' && LS.hold) { lassoUp(); return; }
+  if (scene === 'saloon' && SA.drag) { saloonUp(p); return; }
+  const b = hit(p), id = pressId; pressId = null;
   if (!b || b.id !== id) return;
   sfx.tap(); popAt[id] = T;
-  if (id === 'resetYes') { SAVE.best = { duel: 0, wanted: 0 }; SAVE.bestBandits = { duel: 0, wanted: 0 }; save(); askReset = false; }
+  if (id === 'resetYes') { SAVE.best = { duel: 0, wanted: 0, lasso: 0, saloon: 0, cans: 0 }; SAVE.bestBandits = { duel: 0, wanted: 0 }; save(); askReset = false; }
   else if (id === 'resetNo') askReset = false;
   else if (id === 'play') go('town');
   else if (id === 'music') { SAVE.music = !SAVE.music; save(); Music.volume(); }
   else if (id === 'sound') { SAVE.sound = !SAVE.sound; save(); }
   else if (id === 'back' || id === 'town') go(id === 'back' ? 'title' : 'town');
-  else if (id === 'board') { boardFrom = scene; boardGame = scene === 'wanted' ? 'wanted' : 'duel'; go('board'); }
-  else if (id === 'tab-duel' || id === 'tab-wanted') boardGame = id.slice(4);
-  else if (id === 'boardBack') go(boardFrom === 'duel' || boardFrom === 'wanted' ? 'town' : boardFrom);
+  else if (id === 'board') { boardFrom = scene; boardGame = ['wanted', 'lasso', 'saloon'].includes(scene) ? scene : 'duel'; go('board'); }
+  else if (id.startsWith('tab-')) boardGame = id.slice(4);
+  else if (id === 'boardBack') go(['duel', 'wanted', 'lasso', 'saloon'].includes(boardFrom) ? 'town' : boardFrom);
   else if (id === 'nameOk') nameOk();
   else if (id === 'g-duel' || id === 'again') go('duel');
   else if (id === 'g-wanted' || id === 'againW') go('wanted');
+  else if (id === 'g-lasso' || id === 'againL') go('lasso');
+  else if (id === 'g-saloon' || id === 'againS') go('saloon');
 });
-cvs.addEventListener('pointercancel', () => { pressId = null; });
+cvs.addEventListener('pointercancel', () => { pressId = null; if (LS.hold) lassoUp(); SA.drag = null; });
 // mode test : propose d'effacer les records (pour tester depuis zéro), confirmé dans le jeu
 let askReset = false;
 function testMode(){ askReset = true; }
