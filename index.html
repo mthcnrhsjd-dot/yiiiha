@@ -101,7 +101,7 @@ function wrap(s, px, maxW){
 
 // ---------- Sauvegarde ----------
 const KEY = 'yiiiha-v1';
-let SAVE = { best: { duel: 0, wanted: 0, lasso: 0, saloon: 0, cans: 0 }, bestBandits: { duel: 0, wanted: 0 }, music: true, sound: true };
+let SAVE = { best: { duel: 0, wanted: 0, lasso: 0, saloon: 0, cans: 0, garden: 0 }, bestBandits: { duel: 0, wanted: 0 }, music: true, sound: true };
 try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d) SAVE = Object.assign(SAVE, d, { best: Object.assign(SAVE.best, d.best), bestBandits: Object.assign(SAVE.bestBandits, d.bestBandits) }); } catch(e){}
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(SAVE)); } catch(e){} }
 
@@ -132,6 +132,10 @@ function burst(t, d, v, type, freq, q = 1, bus = sfxBus){
 }
 const canSfx = () => SAVE.sound && actx;
 const sfx = {
+  // oiseau touché, citrouille qui pousse, volée de flèches
+  paf(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .12, .2, 'bandpass', 1200, 1.5); tone(t, 900, .15, .05, 'square', 300); },
+  pop(){ if (!canSfx()) return; tone(actx.currentTime, 300, .18, .08, 'sine', 900); },
+  arrows(){ if (!canSfx()) return; const t = actx.currentTime; for (let i = 0; i < 8; i++) { const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(), d = t + i * .05; f.type = 'bandpass'; f.Q.value = 4; f.frequency.setValueAtTime(2500, d); f.frequency.exponentialRampToValueAtTime(600, d + .3); g.gain.setValueAtTime(.05, d); g.gain.exponentialRampToValueAtTime(.0001, d + .3); n.connect(f).connect(g).connect(sfxBus); n.start(d); n.stop(d + .32); } },
   // recharge : une balle qui rentre, puis le barillet qui se referme
   click(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .03, .12, 'highpass', 4000, 1); tone(t, 1800, .04, .04, 'square'); },
   clac(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .06, .2, 'bandpass', 1500, 2); tone(t, 700, .08, .07, 'square', 400); },
@@ -508,6 +512,7 @@ function go(s){
   if (s === 'lasso') startLasso();
   if (s === 'saloon') startSaloon();
   if (s === 'cans') startCans();
+  if (s === 'garden') startGarden();
 }
 function startDuelRun(){ duel.n = 1; duel.score = 0; duel.disp = 0; duel.newBest = false; newRound(); }
 function newRound(){
@@ -530,6 +535,7 @@ function update(dt){
   if (scene === 'lasso') { updateLasso(dt); return; }
   if (scene === 'saloon') { updateSaloon(dt); return; }
   if (scene === 'cans') { updateCans(dt); return; }
+  if (scene === 'garden') { updateGarden(dt); return; }
   if (scene !== 'duel') return;
   const d = duel; d.t += dt;
   // le score monte en comptant
@@ -610,25 +616,26 @@ const GAMES = [
   { id: 'lasso', name: 'Le Lasso', open: true },
   { id: 'saloon', name: 'Le Saloon', open: true },
   { id: 'cans', name: 'Boîtes de conserve', open: true },
+  { id: 'garden', name: 'Touche pas à mes citrouilles !', open: true },
   { id: 'coach', name: 'La Diligence' },
 ];
 function drawTown(){
   drawText('La ville', 180, 60, 4, C.ink, 'center');
   hat(180, 48, 1, C.orange);
   GAMES.forEach((g, i) => {
-    const y = 120 + i * 88, px = textW(g.name, 3) > 260 ? 2 : 3, ny = y + (px === 3 ? 18 : 22);
+    const y = 104 + i * 78, px = textW(g.name, 3) > 260 ? 2 : 3, ny = y + (px === 3 ? 12 : 14), lines = wrap(g.name, px, 270);
     if (g.open){
-      button('g-' + g.id, 30, y, 300, 70, '', {});
-      drawText(g.name, 50, ny, px, C.ink);
+      button('g-' + g.id, 30, y, 300, 66, '', {});
+      lines.forEach((l, j) => drawText(l, 50, ny - (lines.length - 1) * 8 + j * 17, px, C.ink));
       const b = SAVE.best[g.id] || 0;
-      drawText(b ? 'Record : ' + b + (g.id === 'wanted' ? ' $' : '') : 'Pas encore joué', 50, y + 46, 2, C.mid);
+      drawText(b ? 'Record : ' + b + (g.id === 'wanted' ? ' $' : '') : 'Pas encore joué', 50, y + 42, 2, C.mid);
     } else {
-      button('lock-' + g.id, 30, y, 300, 70, '', { off: true });
+      button('lock-' + g.id, 30, y, 300, 66, '', { off: true });
       drawText(g.name, 50, ny, px, C.light);
-      drawText('Bientôt', 50, y + 46, 2, C.faint);
+      drawText('Bientôt', 50, y + 42, 2, C.faint);
     }
   });
-  button('back', 30, 655, 120, 40, 'Retour');
+  button('back', 30, 660, 120, 40, 'Retour');
 }
 function drawDuel(){
   const d = duel;
@@ -728,7 +735,7 @@ function draw(){
   ctx.fillStyle = C.white; ctx.fillRect(0, 0, cvs.width, cvs.height);
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
   buttons = [];
-  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else if (scene === 'lasso') drawLasso(); else if (scene === 'saloon') drawSaloon(); else if (scene === 'cans') drawCans(); else drawDuel();
+  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else if (scene === 'lasso') drawLasso(); else if (scene === 'saloon') drawSaloon(); else if (scene === 'cans') drawCans(); else if (scene === 'garden') drawGarden(); else drawDuel();
   placePseudo();
   if (askReset) { buttons = []; drawReset(); }
   // fondu en entrant dans un écran
@@ -919,11 +926,11 @@ function fuse(on){
 let floaters = [];
 function floater(s, x, y, col){ floaters.push({ s, x, y, col: col || C.orange, t: 0 }); }
 function updateFloaters(dt){ floaters.forEach(f => { f.t += dt; f.y -= 40 * dt; }); floaters = floaters.filter(f => f.t < 1); }
-function drawFloaters(){ floaters.forEach(f => { ctx.globalAlpha = 1 - clamp01((f.t - .6) / .4); const hw = textW(f.s.toUpperCase(), 3) / 2 + 6; drawText(f.s, Math.max(hw, Math.min(W - hw, f.x)), f.y, 3, f.col, 'center'); ctx.globalAlpha = 1; }); }
+function drawFloaters(){ floaters.forEach(f => { ctx.globalAlpha = 1 - clamp01((f.t - .6) / .4); const px = textW(f.s, 3) > W - 40 ? 2 : 3, hw = textW(f.s, px) / 2 + 6; drawText(f.s, Math.max(hw, Math.min(W - hw, f.x)), f.y, px, f.col, 'center'); ctx.globalAlpha = 1; }); }
 // écran de fin commun
 function drawEndScreen(title, line, big, rec, againId){
   ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(0, 0, W, H);
-  drawText(title, 180, 150, 4, C.ink, 'center');
+  drawText(title, 180, 150, textW(title, 4) > W - 24 ? 3 : 4, C.ink, 'center');
   hat(180, 135, 1, C.orange);
   drawText(line, 180, 226, 2, C.mid, 'center');
   drawText(big, 180, 262, 7, C.ink, 'center');
@@ -1344,6 +1351,234 @@ function drawCans(){
   }
 }
 
+// ---------- Mini-jeu : Touche pas à mes citrouilles ! ----------
+// Des oiseaux traversent le ciel ; certains piquent sur le potager et repartent avec une citrouille.
+// Touche-les pour tirer : s'ils portaient une citrouille, elle retombe dans le potager. Ne tire pas sur la colombe de mamie.
+// Tous les 500 points, une étoile de shérif : à dépenser dans les bonus (carabine, pluie de flèches, épouvantail).
+// La partie s'arrête quand il ne reste plus de citrouilles.
+const PUMPKINS_X = [30, 82, 134, 226, 278, 330], PUMPKIN_Y = 612, GDRUM = { x: 318, y: 684, r: 30 };
+const BIRDS = {
+  corbeau: { pts: 100, speed: 95,  r: 22, hp: 1, carry: 1 },
+  moineau: { pts: 200, speed: 165, r: 15, hp: 1, carry: 1 },
+  vautour: { pts: 300, speed: 70,  r: 30, hp: 2, carry: 2 },
+  colombe: { pts: -300, speed: 80, r: 20, hp: 1, carry: 0 },
+};
+const BONUSES = [
+  { id: 'rifle',  cost: 1, x: 8 },
+  { id: 'arrows', cost: 2, x: 80 },
+  { id: 'scare',  cost: 3, x: 152 },
+];
+const GD = { state: 'play', t: 0, score: 0, disp: 0, hits: 0, saved: 0, wave: 1, toSpawn: 0, spawnT: 0, banner: 0, birds: [], pumpkins: [], bullets: 6, reload: -1, shot: null, aim: -.8, hatJump: -9, stars: 0, starsGiven: 0, rifle: 0, scare: 0, arrows: -1, newBest: false };
+function startGarden(){
+  Object.assign(GD, { state: 'play', t: 0, score: 0, disp: 0, hits: 0, saved: 0, wave: 1, toSpawn: 6, spawnT: 1.6, banner: 1.6, birds: [], bullets: 6, reload: -1, shot: null, aim: -.8, hatJump: -9, stars: 0, starsGiven: 0, rifle: 0, scare: 0, arrows: -1, newBest: false });
+  GD.pumpkins = PUMPKINS_X.map(x => ({ x, state: 'ok', t: 0 })); floaters = [];
+}
+const pumpkinsLeft = () => GD.pumpkins.filter(p => p.state !== 'lost').length;
+function spawnBird(){
+  const g = GD, kind = Math.random() < .12 ? 'colombe' : pick(g.wave < 2 ? ['corbeau', 'corbeau', 'moineau'] : ['corbeau', 'corbeau', 'moineau', 'moineau', 'vautour']);
+  const dir = Math.random() < .5 ? 1 : -1, fast = 1 + (g.wave - 1) * .12;
+  g.birds.push({ kind, dir, x: dir > 0 ? -40 : W + 40, y: 130 + Math.random() * 240, v: BIRDS[kind].speed * fast * (.85 + Math.random() * .3), hp: BIRDS[kind].hp, state: 'fly', t: 0, carry: [], dives: kind === 'colombe' ? 0 : BIRDS[kind].carry, diveP: Math.min(.9, .45 + g.wave * .08), ph: Math.random() * 6 });
+}
+function addScore(n, x, y){
+  const g = GD; g.score = Math.max(0, g.score + n);
+  // une étoile de shérif tous les 500 points
+  const earned = Math.floor(g.score / 500);
+  if (earned > g.starsGiven) { g.stars += earned - g.starsGiven; g.starsGiven = earned; floater('+1 étoile', 90, 640, C.orange); sfx.sting(); }
+}
+function updateGarden(dt){
+  const g = GD; g.t += dt; updateFloaters(dt);
+  g.disp += (g.score - g.disp) * Math.min(1, dt * 5); if (Math.abs(g.score - g.disp) < 1) g.disp = g.score;
+  if (g.shot) { g.shot.t += dt; if (g.shot.t > .1) g.shot = null; }
+  if (g.rifle > 0) g.rifle -= dt;
+  if (g.scare > 0) g.scare -= dt;
+  if (g.banner > 0) g.banner -= dt;
+  if (g.reload >= 0) {
+    const before = Math.floor(g.reload / .13); g.reload += dt; const now = Math.floor(g.reload / .13);
+    if (now > before && now <= 6) { g.bullets = Math.min(6, now); sfx.click(); }
+    if (g.reload > .9) { g.reload = -1; g.bullets = 6; g.hatJump = T; sfx.clac(); }
+  }
+  // la pluie de flèches : au bout d'un instant, tous les oiseaux à l'écran sont touchés (sauf la colombe)
+  if (g.arrows >= 0) { g.arrows += dt; if (g.arrows > .45 && !g.arrowsHit) { g.arrowsHit = true; g.birds.filter(b => b.state !== 'hit' && b.kind !== 'colombe' && b.x > -10 && b.x < W + 10).forEach(b => hitBird(b, 9)); } if (g.arrows > 1.4) g.arrows = -1; }
+  if (g.state === 'play') {
+    if (g.toSpawn > 0 && (g.spawnT -= dt) <= 0) { spawnBird(); g.toSpawn--; g.spawnT = Math.max(.45, 1.5 - g.wave * .1) * (.7 + Math.random() * .6); }
+    // vague terminée : la suivante arrive, et une citrouille repousse
+    if (g.toSpawn === 0 && !g.birds.length) {
+      g.wave++; g.toSpawn = 5 + g.wave * 2; g.spawnT = 1.8; g.banner = 1.6;
+      const lost = g.pumpkins.find(p => p.state === 'lost');
+      if (lost) { lost.state = 'grow'; lost.t = 0; sfx.pop(); floater('Une citrouille repousse !', 180, 560, C.orange); }
+    }
+  } else if (g.state === 'end' && g.t > 1.6) endGarden();
+  g.pumpkins.forEach(p => {
+    p.t += dt;
+    if (p.state === 'grow' && p.t > .6) p.state = 'ok';
+    if (p.state === 'fall') { const k = clamp01(p.t / .7); p.fx = p.sx + (p.x - p.sx) * ease.out(k); p.fy = p.sy + (PUMPKIN_Y - p.sy) * ease.bounce(k); if (k >= 1) p.state = 'ok'; }
+  });
+  g.birds.forEach(b => {
+    b.t += dt; b.ph += dt * 16;
+    if (b.state === 'fly') {
+      b.x += b.dir * b.v * dt; b.y += Math.sin(b.t * 3) * 12 * dt;
+      // il repère une citrouille juste en dessous et pique dessus
+      if (b.dives > 0 && g.scare <= 0 && g.state === 'play') {
+        const target = g.pumpkins.find(p => p.state === 'ok' && Math.abs(p.x - b.x) < 14 && !g.birds.some(o => o.target === p));
+        if (target && Math.random() < b.diveP) { b.state = 'dive'; b.target = target; }
+        else if (target) b.dives = Math.max(0, b.dives - .34);
+      }
+    } else if (b.state === 'dive') {
+      const p = b.target, dx = p.x - b.x, dy = PUMPKIN_Y - 30 - b.y, d = Math.hypot(dx, dy), sp = b.v * 2.2;
+      if (g.scare > 0 || p.state !== 'ok') { b.state = 'flee'; b.target = null; }
+      else if (d < sp * dt + 2) { p.state = 'carried'; b.carry.push(p); b.target = null; b.dives--; b.state = b.dives >= 1 ? 'fly' : 'flee'; if (b.state === 'fly') b.y = PUMPKIN_Y - 40; sfx.caw(); }
+      else { b.x += dx / d * sp * dt; b.y += dy / d * sp * dt; }
+    } else if (b.state === 'flee') {
+      b.x += b.dir * b.v * 1.3 * dt; b.y = Math.max(110, b.y - b.v * .9 * dt);
+    } else if (b.state === 'hit') {
+      b.vy += 900 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.spin * dt;
+    }
+    if (b.state === 'fly' && b.carry.length) b.y = Math.max(110, b.y - b.v * .5 * dt);
+  });
+  // un oiseau qui sort de l'écran emporte ses citrouilles
+  g.birds.forEach(b => {
+    const out = b.x < -60 || b.x > W + 60 || b.y > 760;
+    if (out) {
+      if (b.state !== 'hit' && b.carry.length) { b.carry.forEach(p => { p.state = 'lost'; }); floater('Ma citrouille !', b.x < 0 ? 90 : W - 90, 200, C.ink); sfx.grumble(); }
+      b.gone = true;
+    }
+  });
+  g.birds = g.birds.filter(b => !b.gone);
+  if (g.state === 'play' && pumpkinsLeft() === 0) { g.state = 'end'; g.t = 0; sfx.lose(); }
+}
+// un oiseau touché : plumes, culbute ; il lâche ses citrouilles
+function hitBird(b, dmg){
+  const g = GD; b.hp -= dmg;
+  puff(b.x, b.y, 8, { spread: 90, vy: -20, r: 3, max: .7, grow: 0, col: b.kind === 'colombe' ? C.faint : C.light });
+  if (b.hp > 0) { floater('Paf !', b.x, b.y - 30, C.ink); sfx.paf(); return; }
+  b.state = 'hit'; b.vy = -160; b.vx = b.dir * 40; b.a = 0; b.spin = (Math.random() < .5 ? -1 : 1) * 10; b.target = null;
+  sfx.paf();
+  if (b.kind === 'colombe') { addScore(BIRDS.colombe.pts, b.x, b.y); floater('Pas la colombe de mamie !', b.x, b.y - 40, C.ink); floater('-300', b.x, b.y - 10); return; }
+  g.hits++; addScore(BIRDS[b.kind].pts, b.x, b.y); floater('Paf ! +' + BIRDS[b.kind].pts, b.x, b.y - 30);
+  b.carry.forEach(p => { p.state = 'fall'; p.t = 0; p.sx = b.x; p.sy = b.y + 14; g.saved++; addScore(50); floater('Sauvée !', p.x, PUMPKIN_Y - 70, C.orange); });
+  b.carry = [];
+}
+function tapGarden(p){
+  const g = GD;
+  if (g.state !== 'play') return;
+  // les bonus
+  const bo = BONUSES.find(o => p.x >= o.x && p.x <= o.x + 66 && p.y >= 664 && p.y <= 712);
+  if (bo) { useBonus(bo); return; }
+  // le barillet
+  if (Math.hypot(p.x - GDRUM.x, p.y - GDRUM.y) < GDRUM.r + 10) { if (g.rifle <= 0 && g.reload < 0 && g.bullets < 6) { g.reload = 0; g.bullets = 0; } return; }
+  if (g.reload >= 0) return;
+  const rifle = g.rifle > 0;
+  if (!rifle && g.bullets <= 0) { sfx.click(); floater('Recharge !', GDRUM.x - 70, GDRUM.y - 50, C.orange); return; }
+  if (!rifle) g.bullets--;
+  sfx.bang(); g.aim = Math.atan2(p.y - 572, p.x - 193); g.shot = { x: p.x, y: p.y, t: 0 };
+  const extra = rifle ? 20 : 6;
+  const b = g.birds.filter(q => q.state !== 'hit' && Math.hypot(q.x - p.x, q.y - p.y) < BIRDS[q.kind].r + extra).sort((a, c) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(c.x - p.x, c.y - p.y))[0];
+  if (b) hitBird(b, rifle ? 2 : 1);
+  else { sfx.ricochet(); puff(p.x, p.y, 3, { spread: 30, vy: -10, r: 3, max: .4, col: C.light }); }
+}
+function useBonus(bo){
+  const g = GD; if (g.stars < bo.cost) { sfx.click(); return; }
+  g.stars -= bo.cost; popAt['bonus-' + bo.id] = T;
+  if (bo.id === 'rifle') { g.rifle = 10; g.reload = -1; floater('Carabine !', 180, 520, C.orange); sfx.clac(); }
+  else if (bo.id === 'arrows') { g.arrows = 0; g.arrowsHit = false; floater('Pluie de flèches !', 180, 520, C.orange); sfx.arrows(); }
+  else { g.scare = 10; floater('Épouvantail !', 180, 520, C.orange); sfx.pop(); g.birds.forEach(b => { if (b.state === 'dive') { b.state = 'flee'; b.target = null; } }); }
+}
+function endGarden(){
+  const g = GD;
+  if (g.score > (SAVE.best.garden || 0)) { SAVE.best.garden = g.score; g.newBest = true; }
+  save(); g.state = 'over'; g.t = 0; lbSend();
+}
+function pumpkin(x, y, s){
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = C.orangeD; ctx.fillRect(-19, -26, 38, 26); ctx.fillStyle = C.orange; ctx.fillRect(-17, -24, 34, 22);
+  ctx.fillStyle = C.orangeD; ctx.fillRect(-7, -24, 3, 22); ctx.fillRect(4, -24, 3, 22);
+  ctx.fillStyle = C.dark; ctx.fillRect(-2, -32, 5, 8); ctx.fillRect(3, -32, 6, 3);
+  ctx.restore();
+}
+function bird(b){
+  const k = b.kind, s = k === 'vautour' ? 1.35 : (k === 'moineau' ? .7 : 1), wing = Math.sin(b.ph) * 9;
+  ctx.save(); ctx.translate(b.x, b.y); if (b.state === 'hit') ctx.rotate(b.a); ctx.scale(s * b.dir, s);
+  const body = k === 'colombe' ? '#f6f6f6' : (k === 'moineau' ? C.mid : (k === 'vautour' ? C.dark : C.black));
+  if (k === 'colombe') { ctx.fillStyle = C.light; ctx.fillRect(-15, -9, 30, 16); }
+  ctx.fillStyle = body; ctx.fillRect(-14, -8, 26, 14); ctx.fillRect(-20, -6, 7, 8);
+  ctx.fillStyle = k === 'vautour' ? C.light : body; ctx.fillRect(10, -14, 11, 11);
+  if (k === 'vautour') { ctx.fillStyle = C.faint; ctx.fillRect(4, -6, 8, 6); }
+  ctx.fillStyle = k === 'colombe' ? C.light : C.ink; ctx.fillRect(-6, -8 - wing, 14, 6);
+  ctx.fillStyle = k === 'colombe' ? C.orange : C.dark; ctx.fillRect(21, -10, 6, 3);
+  ctx.fillStyle = b.state === 'hit' ? C.ink : (k === 'colombe' ? C.ink : C.white); ctx.fillRect(16, -11, 2, 2);
+  ctx.restore();
+  // ce qu'il emporte
+  b.carry.forEach((p, i) => pumpkin(b.x + (i ? 14 : 0), b.y + 30, .55));
+}
+function drawScarecrow(x, y){
+  ctx.fillStyle = C.dark; ctx.fillRect(x - 2, y - 80, 5, 80); ctx.fillRect(x - 30, y - 62, 60, 5);
+  ctx.fillStyle = C.mid; ctx.fillRect(x - 13, y - 66, 26, 30); ctx.fillStyle = '#e8d7a8'; ctx.fillRect(x - 10, y - 88, 20, 20);
+  ctx.fillStyle = C.ink; ctx.fillRect(x - 6, y - 82, 3, 3); ctx.fillRect(x + 3, y - 82, 3, 3); ctx.fillRect(x - 5, y - 75, 10, 2);
+  hat(x, y - 86, .8, C.dark);
+  ctx.fillStyle = '#e8d7a8'; ctx.fillRect(x - 34, y - 60, 5, 6); ctx.fillRect(x + 29, y - 60, 5, 6);
+}
+function drawBonusIcon(id, x, y){
+  if (id === 'rifle') { ctx.fillStyle = C.ink; ctx.fillRect(x - 18, y - 2, 34, 4); ctx.fillStyle = C.mid; ctx.fillRect(x - 24, y, 12, 7); }
+  else if (id === 'arrows') { for (let i = 0; i < 3; i++) { const ax = x - 12 + i * 12; ctx.fillStyle = C.ink; ctx.fillRect(ax - 1, y - 10, 2, 16); ctx.fillStyle = C.mid; ctx.fillRect(ax - 3, y + 6, 6, 3); ctx.fillStyle = C.ink; ctx.fillRect(ax - 3, y - 12, 6, 3); } }
+  else { ctx.fillStyle = C.dark; ctx.fillRect(x - 1, y - 12, 3, 22); ctx.fillRect(x - 12, y - 6, 24, 3); ctx.fillStyle = '#e8d7a8'; ctx.fillRect(x - 5, y - 16, 10, 8); }
+}
+function star(x, y, r, col){
+  ctx.fillStyle = col; ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, d = i % 2 ? r * .45 : r; ctx.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d); }
+  ctx.fill();
+}
+function drawGarden(){
+  const g = GD;
+  drawText(String(Math.round(g.disp)), W - 20, 22, 4, C.ink, 'right');
+  drawText('Record ' + (SAVE.best.garden || 0), W - 20, 54, 2, C.light, 'right');
+  drawText('Vague ' + g.wave, 20, 22, 3, C.ink);
+  star(28, 62, 9, C.orange); drawText('x ' + g.stars, 44, 55, 2, C.ink);
+  // la terre et les citrouilles
+  ctx.fillStyle = '#efe7da'; ctx.fillRect(0, PUMPKIN_Y - 6, W, 30); ctx.fillStyle = C.ground; ctx.fillRect(0, PUMPKIN_Y + 22, W, 4);
+  g.pumpkins.forEach(p => {
+    if (p.state === 'ok') pumpkin(p.x, PUMPKIN_Y, 1);
+    else if (p.state === 'grow') pumpkin(p.x, PUMPKIN_Y, ease.out(clamp01(p.t / .6)));
+    else if (p.state === 'fall') pumpkin(p.fx, p.fy, 1);
+    else if (p.state === 'lost') { ctx.fillStyle = C.faint; ctx.fillRect(p.x - 2, PUMPKIN_Y - 8, 4, 8); ctx.fillRect(p.x - 7, PUMPKIN_Y - 10, 6, 3); }
+  });
+  if (g.scare > 0) drawScarecrow(108, PUMPKIN_Y + 4);
+  // le cow-boy au milieu du potager, avec sa carabine quand le bonus est actif
+  const jump = T - g.hatJump, lift = jump < .5 ? Math.sin(jump / .5 * Math.PI) * 30 : 0;
+  cowboy(180, 640, .85, g.aim > -Math.PI / 2 ? 1 : -1, { seed: 3, pose: 'aim', armA: g.reload >= 0 ? .9 : (g.aim > -Math.PI / 2 ? g.aim : -Math.PI - g.aim), flash: !!g.shot && g.shot.t < .06, hatLift: lift, L: g.rifle > 0 ? { rifle: true } : undefined });
+  if (g.shot && g.shot.t < .06) { ctx.strokeStyle = C.orange; ctx.lineWidth = 2; ctx.setLineDash([5, 6]); ctx.beginPath(); ctx.moveTo(193 + Math.cos(g.aim) * 44, 572 + Math.sin(g.aim) * 44); ctx.lineTo(g.shot.x, g.shot.y); ctx.stroke(); ctx.setLineDash([]); }
+  g.birds.forEach(bird);
+  // la pluie de flèches
+  if (g.arrows >= 0) { for (let i = 0; i < 26; i++) { const x = (i * 53) % W + 10, y = -40 + (g.arrows * 900 + i * 37) % 620; ctx.save(); ctx.translate(x, y); ctx.rotate(.25); ctx.fillStyle = C.ink; ctx.fillRect(-1, -22, 2, 24); ctx.fillStyle = C.mid; ctx.fillRect(-3, -24, 6, 4); ctx.fillStyle = C.orange; ctx.fillRect(-2, 2, 4, 4); ctx.restore(); } }
+  // le bas : bonus et barillet
+  BONUSES.forEach(bo => {
+    const ok = g.stars >= bo.cost && g.state === 'play', k = T - (popAt['bonus-' + bo.id] == null ? -9 : popAt['bonus-' + bo.id]), sc = k < .35 ? 1 + Math.sin(k / .35 * Math.PI) * .1 : 1;
+    ctx.save(); ctx.translate(bo.x + 33, 688); ctx.scale(sc, sc); ctx.translate(-(bo.x + 33), -688);
+    ctx.fillStyle = ok ? C.white : C.ground; ctx.fillRect(bo.x, 664, 66, 48);
+    ctx.fillStyle = ok ? C.ink : C.faint; ctx.fillRect(bo.x, 664, 66, 3); ctx.fillRect(bo.x, 709, 66, 3); ctx.fillRect(bo.x, 664, 3, 48); ctx.fillRect(bo.x + 63, 664, 3, 48);
+    if (!ok) ctx.globalAlpha = .35; drawBonusIcon(bo.id, bo.x + 24, 684); ctx.globalAlpha = 1;
+    drawText(String(bo.cost), bo.x + 46, 692, 2, ok ? C.ink : C.light); star(bo.x + 58, 683, 5, ok ? C.orange : C.faint);
+    ctx.restore();
+  });
+  if (g.rifle > 0) drawText('Carabine ' + Math.ceil(g.rifle), 226, 644, 2, C.orange);
+  else {
+    const rot = g.reload >= 0 ? g.reload * 7 : 0, empty = g.bullets === 0 && g.reload < 0;
+    ctx.save(); ctx.translate(GDRUM.x, GDRUM.y); ctx.rotate(rot);
+    ctx.fillStyle = C.dark; ctx.beginPath(); ctx.arc(0, 0, GDRUM.r, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 - Math.PI / 2; ctx.fillStyle = i < g.bullets ? C.orange : C.white; ctx.beginPath(); ctx.arc(Math.cos(a) * 17, Math.sin(a) * 17, 6, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+    if (empty) drawText('Recharge !', GDRUM.x - 4, GDRUM.y - 50, 2, C.orange, 'center');
+  }
+  drawParts(); drawFloaters();
+  if (g.banner > 0 && g.state === 'play') drawText('Vague ' + g.wave, 180, 250, 5, C.ink, 'center');
+  if (g.state === 'play' && g.wave === 1 && g.t < 3) drawText('Protège tes citrouilles !', 180, 300, 2, C.mid, 'center');
+  if (g.state === 'end') drawText('Plus de citrouilles !', 180, 250, 3, C.ink, 'center');
+  if (g.state === 'over') {
+    drawEndScreen('Fin de la récolte', 'Oiseaux touchés : ' + g.hits, String(g.score), 'Citrouilles sauvées : ' + g.saved, 'againG');
+    drawText('Record : ' + (SAVE.best.garden || 0), 180, 362, 2, C.mid, 'center');
+    if (g.newBest && Math.floor(T * 3) % 2 === 0) drawText('Nouveau record !', 180, 396, 3, C.orange, 'center');
+  }
+}
+
 // ---------- Pseudo (choisi une seule fois, au premier lancement) ----------
 const pseudoEl = document.getElementById('pseudo');
 let nameErr = '';
@@ -1378,7 +1613,7 @@ const LB_URL = 'https://script.google.com/macros/s/AKfycbwoeVB6kM4BwQj6q0EyTLvaV
 let lbData = null, lbState = 'idle', boardFrom = 'title', boardGame = 'duel';
 function lbSend(){
   if (!SAVE.name || !LB_URL.startsWith('https')) return;
-  const body = JSON.stringify({ id: SAVE.id, name: SAVE.name, duel: SAVE.best.duel, bandits: SAVE.bestBandits.duel, wanted: SAVE.best.wanted || 0, caught: SAVE.bestBandits.wanted || 0, lasso: SAVE.best.lasso || 0, saloon: SAVE.best.saloon || 0, cans: SAVE.best.cans || 0 });
+  const body = JSON.stringify({ id: SAVE.id, name: SAVE.name, duel: SAVE.best.duel, bandits: SAVE.bestBandits.duel, wanted: SAVE.best.wanted || 0, caught: SAVE.bestBandits.wanted || 0, lasso: SAVE.best.lasso || 0, saloon: SAVE.best.saloon || 0, cans: SAVE.best.cans || 0, garden: SAVE.best.garden || 0 });
   try { fetch(LB_URL, { method: 'POST', body, keepalive: true }).catch(() => {}); } catch(e){}
 }
 async function lbLoad(){
@@ -1393,7 +1628,7 @@ async function lbLoad(){
 function drawBoard(){
   drawText('Classement', 180, 40, 4, C.ink, 'center');
   hat(180, 34, .8, C.orange);
-  [['duel', 'Duel'], ['wanted', 'Wanted'], ['lasso', 'Lasso'], ['saloon', 'Saloon'], ['cans', 'Boîtes']].forEach(([g, n], i) => button('tab-' + g, i < 3 ? 15 + i * 112 : 71 + (i - 3) * 112, i < 3 ? 80 : 124, 106, 34, n, { main: boardGame === g }));
+  [['duel', 'Duel'], ['wanted', 'Wanted'], ['lasso', 'Lasso'], ['saloon', 'Saloon'], ['cans', 'Boîtes'], ['garden', 'Potager']].forEach(([g, n], i) => button('tab-' + g, 15 + (i % 3) * 112, i < 3 ? 80 : 124, 106, 34, n, { main: boardGame === g }));
   // même pseudo = même joueur (ex. Safari et l'icône de l'écran d'accueil) : on garde son meilleur score ;
   // ceux qui n'ont pas encore marqué de points n'apparaissent pas
   const best = {};
@@ -1430,6 +1665,7 @@ cvs.addEventListener('pointerdown', e => {
   if (scene === 'lasso' && LS.state === 'play') { lassoDown(); return; }
   if (scene === 'saloon' && SA.state === 'play') { saloonDown(p); return; }
   if (scene === 'cans' && CN.state === 'play') { tapCans(p); return; }
+  if (scene === 'garden' && GD.state === 'play') { tapGarden(p); return; }
   const b = hit(p); pressId = b ? b.id : null;
   // mode test caché : toucher 5 fois le logo
   if (scene === 'title' && !askReset && p.y > 150 && p.y < 320){ const n = performance.now(); titleTaps = n - titleTapT < 600 ? titleTaps + 1 : 1; titleTapT = n; if (titleTaps >= 5) { titleTaps = 0; testMode(); } }
@@ -1442,21 +1678,22 @@ cvs.addEventListener('pointerup', e => {
   const b = hit(p), id = pressId; pressId = null;
   if (!b || b.id !== id) return;
   sfx.tap(); popAt[id] = T;
-  if (id === 'resetYes') { SAVE.best = { duel: 0, wanted: 0, lasso: 0, saloon: 0, cans: 0 }; SAVE.bestBandits = { duel: 0, wanted: 0 }; save(); askReset = false; }
+  if (id === 'resetYes') { SAVE.best = { duel: 0, wanted: 0, lasso: 0, saloon: 0, cans: 0, garden: 0 }; SAVE.bestBandits = { duel: 0, wanted: 0 }; save(); askReset = false; }
   else if (id === 'resetNo') askReset = false;
   else if (id === 'play') go('town');
   else if (id === 'music') { SAVE.music = !SAVE.music; save(); Music.volume(); }
   else if (id === 'sound') { SAVE.sound = !SAVE.sound; save(); }
   else if (id === 'back' || id === 'town') go(id === 'back' ? 'title' : 'town');
-  else if (id === 'board') { boardFrom = scene; boardGame = ['wanted', 'lasso', 'saloon', 'cans'].includes(scene) ? scene : 'duel'; go('board'); }
+  else if (id === 'board') { boardFrom = scene; boardGame = ['wanted', 'lasso', 'saloon', 'cans', 'garden'].includes(scene) ? scene : 'duel'; go('board'); }
   else if (id.startsWith('tab-')) boardGame = id.slice(4);
-  else if (id === 'boardBack') go(['duel', 'wanted', 'lasso', 'saloon', 'cans'].includes(boardFrom) ? 'town' : boardFrom);
+  else if (id === 'boardBack') go(['duel', 'wanted', 'lasso', 'saloon', 'cans', 'garden'].includes(boardFrom) ? 'town' : boardFrom);
   else if (id === 'nameOk') nameOk();
   else if (id === 'g-duel' || id === 'again') go('duel');
   else if (id === 'g-wanted' || id === 'againW') go('wanted');
   else if (id === 'g-lasso' || id === 'againL') go('lasso');
   else if (id === 'g-saloon' || id === 'againS') go('saloon');
   else if (id === 'g-cans' || id === 'againC') go('cans');
+  else if (id === 'g-garden' || id === 'againG') go('garden');
 });
 cvs.addEventListener('pointercancel', () => { pressId = null; if (LS.hold) lassoUp(); SA.drag = null; });
 // mode test : propose d'effacer les records (pour tester depuis zéro), confirmé dans le jeu
