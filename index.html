@@ -132,6 +132,12 @@ function burst(t, d, v, type, freq, q = 1, bus = sfxBus){
 }
 const canSfx = () => SAVE.sound && actx;
 const sfx = {
+  // recharge : une balle qui rentre, puis le barillet qui se referme
+  click(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .03, .12, 'highpass', 4000, 1); tone(t, 1800, .04, .04, 'square'); },
+  clac(){ if (!canSfx()) return; const t = actx.currentTime; burst(t, .06, .2, 'bandpass', 1500, 2); tone(t, 700, .08, .07, 'square', 400); },
+  // boîte touchée (plus aigu en l'air)
+  tink(air){ if (!canSfx()) return; const t = actx.currentTime, f = air ? 1760 : 1320; tone(t + .02, f, .3, .07, 'triangle'); tone(t + .02, f * 2.7, .2, .025); },
+  caw(){ if (!canSfx()) return; const t = actx.currentTime; [0, .2].forEach(d => tone(t + d, 520, .16, .06, 'sawtooth', 380)); },
   // lasso qui tourne, lasso lancé
   swish(){ if (!canSfx()) return; const t = actx.currentTime; const n = noise(), f = actx.createBiquadFilter(), g = actx.createGain(); f.type = 'bandpass'; f.Q.value = 3; f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(1600, t + .2); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.05, t + .08); g.gain.exponentialRampToValueAtTime(.0001, t + .22); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + .25); },
   whiff(){ if (!canSfx()) return; tone(actx.currentTime, 900, .2, .04, 'sine', 300); },
@@ -332,7 +338,7 @@ function cowboy(x, y, s, dir, opts = {}){
   if (still && ((T * .9 + seed * 1.37) % 3.2) < .12 && !['mamie', 'doc', 'dort', 'boude'].includes(L.face)) {
     r(-9, -94, 18, 6, '#d6d6d6'); r(-7, -91, 5, 1, C.ink); r(3, -91, 5, 1, C.ink);
   }
-  if (opts.hat !== false) lookHat(L, 0, -96, bandit);
+  if (opts.hat !== false) lookHat(L, 0, -96 - (opts.hatLift || 0), bandit);
   // la main se rapproche doucement du revolver pendant l'attente
   if (opts.reach != null && !aiming && !L.rifle) { const hx = L.fat ? 12 : 0; r(8 + hx + opts.reach * 10, -52 + opts.reach * 3, 6, 6, '#d6d6d6'); }
   // bras et arme
@@ -501,6 +507,7 @@ function go(s){
   if (s === 'wanted') startWanted();
   if (s === 'lasso') startLasso();
   if (s === 'saloon') startSaloon();
+  if (s === 'cans') startCans();
 }
 function startDuelRun(){ duel.n = 1; duel.score = 0; duel.disp = 0; duel.newBest = false; newRound(); }
 function newRound(){
@@ -522,6 +529,7 @@ function update(dt){
   if (scene === 'wanted') { updateWanted(dt); return; }
   if (scene === 'lasso') { updateLasso(dt); return; }
   if (scene === 'saloon') { updateSaloon(dt); return; }
+  if (scene === 'cans') { updateCans(dt); return; }
   if (scene !== 'duel') return;
   const d = duel; d.t += dt;
   // le score monte en comptant
@@ -601,7 +609,7 @@ const GAMES = [
   { id: 'wanted', name: 'Avis de recherche', open: true },
   { id: 'lasso', name: 'Le Lasso', open: true },
   { id: 'saloon', name: 'Le Saloon', open: true },
-  { id: 'cans', name: 'Boîtes de conserve' },
+  { id: 'cans', name: 'Boîtes de conserve', open: true },
   { id: 'coach', name: 'La Diligence' },
 ];
 function drawTown(){
@@ -720,7 +728,7 @@ function draw(){
   ctx.fillStyle = C.white; ctx.fillRect(0, 0, cvs.width, cvs.height);
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
   buttons = [];
-  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else if (scene === 'lasso') drawLasso(); else if (scene === 'saloon') drawSaloon(); else drawDuel();
+  if (scene === 'title') drawTitle(); else if (scene === 'town') drawTown(); else if (scene === 'name') drawName(); else if (scene === 'board') drawBoard(); else if (scene === 'wanted') drawWanted(); else if (scene === 'lasso') drawLasso(); else if (scene === 'saloon') drawSaloon(); else if (scene === 'cans') drawCans(); else drawDuel();
   placePseudo();
   if (askReset) { buttons = []; drawReset(); }
   // fondu en entrant dans un écran
@@ -911,7 +919,7 @@ function fuse(on){
 let floaters = [];
 function floater(s, x, y, col){ floaters.push({ s, x, y, col: col || C.orange, t: 0 }); }
 function updateFloaters(dt){ floaters.forEach(f => { f.t += dt; f.y -= 40 * dt; }); floaters = floaters.filter(f => f.t < 1); }
-function drawFloaters(){ floaters.forEach(f => { ctx.globalAlpha = 1 - clamp01((f.t - .6) / .4); drawText(f.s, Math.max(50, Math.min(W - 50, f.x)), f.y, 3, f.col, 'center'); ctx.globalAlpha = 1; }); }
+function drawFloaters(){ floaters.forEach(f => { ctx.globalAlpha = 1 - clamp01((f.t - .6) / .4); const hw = textW(f.s.toUpperCase(), 3) / 2 + 6; drawText(f.s, Math.max(hw, Math.min(W - hw, f.x)), f.y, 3, f.col, 'center'); ctx.globalAlpha = 1; }); }
 // écran de fin commun
 function drawEndScreen(title, line, big, rec, againId){
   ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(0, 0, W, H);
@@ -1181,6 +1189,161 @@ function drawSaloon(){
   }
 }
 
+// ---------- Mini-jeu : Les Boîtes de conserve ----------
+// Des boîtes sur la barrière : touche-les pour tirer. Une boîte touchée saute en l'air : touche-la encore au vol pour un bonus.
+// Le revolver a 6 balles : touche le barillet en bas à droite pour recharger.
+// Pièges : la bouteille de lait de mamie (ne tire pas dessus !) et le corbeau qui vient se poser.
+const RAIL_Y = 360, CANS_TIME = 40, SLOTS = [50, 110, 170, 230, 290], DRUM = { x: 298, y: 652, r: 38 };
+const CN = { state: 'play', t: 0, time: CANS_TIME, score: 0, disp: 0, hits: 0, combo: 0, bullets: 6, reload: -1, items: [], spawnQ: [], crow: null, crowT: 6, shot: null, aim: -.6, hatJump: -9, newBest: false };
+function startCans(){
+  Object.assign(CN, { state: 'play', t: 0, time: CANS_TIME, score: 0, disp: 0, hits: 0, combo: 0, bullets: 6, reload: -1, items: [], spawnQ: [], crow: null, crowT: 6, shot: null, aim: -.6, hatJump: -9, newBest: false });
+  floaters = []; SLOTS.forEach((x, i) => newCan(x, i * .08));
+}
+// une boîte (ou parfois la bouteille de lait) surgit derrière la barrière
+function newCan(x, delay){
+  const level = (CANS_TIME - CN.time) / CANS_TIME, milk = CN.items.length > 2 && Math.random() < .14;
+  const moving = !milk && Math.random() < level * .8;
+  CN.items.push({ kind: milk ? 'milk' : 'can', x, y: RAIL_Y, slot: x, vx: moving ? (Math.random() < .5 ? -1 : 1) * (40 + level * 70) : 0, state: 'rail', t: -(delay || 0), vy: 0, ax: 0, a: 0, spin: 0 });
+}
+const comboMult = () => CN.combo >= 10 ? 3 : (CN.combo >= 5 ? 2 : 1);
+function updateCans(dt){
+  const c = CN; c.t += dt; updateFloaters(dt);
+  c.disp += (c.score - c.disp) * Math.min(1, dt * 5); if (Math.abs(c.score - c.disp) < 1) c.disp = c.score;
+  if (c.shot) { c.shot.t += dt; if (c.shot.t > .1) c.shot = null; }
+  if (c.state === 'play'){
+    c.time -= dt;
+    if (c.time <= 0) { c.time = 0; c.state = 'end'; c.t = 0; sfx.bell(); }
+    // la recharge : les balles rentrent une à une, puis « clac » et le chapeau saute
+    if (c.reload >= 0) {
+      const before = Math.floor(c.reload / .13); c.reload += dt; const now = Math.floor(c.reload / .13);
+      if (now > before && now <= 6) { c.bullets = Math.min(6, now); sfx.click(); }
+      if (c.reload > .9) { c.reload = -1; c.bullets = 6; c.hatJump = T; sfx.clac(); floater('Clac !', 90, 560, C.ink); }
+    }
+    // le corbeau vient se poser sur la barrière, puis repart
+    if (c.crow) {
+      const k = c.crow; k.t += dt;
+      if (k.state === 'in' && k.t > .6) { k.state = 'sit'; k.t = 0; sfx.caw(); }
+      else if (k.state === 'sit' && k.t > 3.5) { k.state = 'out'; k.t = 0; }
+      else if (k.state === 'out' && k.t > .8) c.crow = null;
+    } else if ((c.crowT -= dt) <= 0) { c.crow = { x: 40 + Math.random() * 280, state: 'in', t: 0, from: Math.random() < .5 ? -1 : 1 }; c.crowT = 6 + Math.random() * 5; }
+  } else if (c.state === 'end' && c.t > 1.4) endCans();
+  c.items.forEach(it => {
+    it.t += dt;
+    if (it.state === 'rail' && it.vx) { it.x += it.vx * dt; if (it.x < 24 || it.x > 336) { it.vx *= -1; it.x = Math.max(24, Math.min(336, it.x)); } }
+    if (it.state === 'air') { it.vy += 900 * dt; it.x += it.ax * dt; it.y += it.vy * dt; it.a += it.spin * dt; if (it.x < 14 || it.x > 346) { it.ax *= -1; } }
+  });
+  // une boîte tombée par terre laisse sa place à une nouvelle
+  c.items.forEach(it => { if (it.state === 'air' && it.y > 700) { it.state = 'gone'; puff(it.x, 690, 4, { spread: 50, vy: -10, r: 4, max: .5, col: C.faint }); c.spawnQ.push({ x: it.slot, t: .5 }); } });
+  c.items = c.items.filter(it => it.state !== 'gone');
+  c.spawnQ.forEach(s => { s.t -= dt; if (s.t <= 0 && c.state === 'play') newCan(s.x); });
+  c.spawnQ = c.spawnQ.filter(s => s.t > 0);
+}
+function tapCans(p){
+  const c = CN;
+  // le barillet : recharger
+  if (Math.hypot(p.x - DRUM.x, p.y - DRUM.y) < DRUM.r + 10) { if (c.reload < 0 && c.bullets < 6) { c.reload = 0; c.bullets = 0; } return; }
+  if (c.reload >= 0) return;
+  if (c.bullets <= 0) { sfx.click(); floater('Recharge !', DRUM.x - 60, DRUM.y - 60, C.orange); return; }
+  c.bullets--; sfx.bang();
+  c.aim = Math.atan2(p.y - 640, p.x - 74); c.shot = { x: p.x, y: p.y, t: 0 };
+  // d'abord ce qui vole (bonus), puis le corbeau, puis la barrière
+  const air = c.items.filter(it => it.state === 'air' && Math.abs(p.x - it.x) < 26 && Math.abs(p.y - (it.y - 15)) < 30);
+  if (air.length) {
+    const it = air[0]; it.vy = -480; it.ax = (p.x < it.x ? 1 : -1) * (60 + Math.random() * 60); it.spin = (Math.random() < .5 ? -1 : 1) * 14;
+    c.combo++; c.hits++; const pts = 200 * comboMult(); c.score += pts; floater("En l'air ! +" + pts, it.x, it.y - 50); sfx.tink(true); return;
+  }
+  if (c.crow && c.crow.state === 'sit' && Math.abs(p.x - c.crow.x) < 26 && p.y > RAIL_Y - 50 && p.y < RAIL_Y + 6) {
+    c.crow.state = 'out'; c.crow.t = 0; c.combo = 0; sfx.caw(); floater('Croâ !', c.crow.x, RAIL_Y - 70, C.ink); return;
+  }
+  const on = c.items.filter(it => it.state === 'rail' && it.t >= 0 && Math.abs(p.x - it.x) < 22 && p.y > RAIL_Y - 50 && p.y < RAIL_Y + 8);
+  if (on.length) {
+    const it = on[0]; it.state = 'air'; it.vy = -520; it.ax = (Math.random() - .5) * 120; it.spin = (Math.random() < .5 ? -1 : 1) * 12;
+    if (it.kind === 'milk') {
+      it.state = 'gone'; c.combo = 0; c.score = Math.max(0, c.score - 300); sfx.crash();
+      puff(it.x, RAIL_Y - 20, 10, { spread: 120, vy: -60, r: 4, max: .7, grow: 2, col: C.white }); puff(it.x, RAIL_Y - 20, 6, { spread: 90, vy: -40, r: 3, max: .6, grow: 0, col: C.light });
+      floater('Le lait de mamie !', it.x, RAIL_Y - 70, C.ink); floater('-300', it.x, RAIL_Y - 40);
+      c.spawnQ.push({ x: it.slot, t: 1 }); return;
+    }
+    c.combo++; c.hits++; const pts = 100 * comboMult(); c.score += pts; floater('+' + pts, it.x, RAIL_Y - 70); sfx.tink(false); return;
+  }
+  // raté : la balle file et ricoche
+  c.combo = 0; sfx.ricochet(); puff(p.x, p.y, 3, { spread: 30, vy: -10, r: 3, max: .4, col: C.light });
+}
+function endCans(){
+  const c = CN;
+  if (c.score > (SAVE.best.cans || 0)) { SAVE.best.cans = c.score; c.newBest = true; }
+  save(); c.state = 'over'; c.t = 0; sfx.lose(); lbSend();
+}
+function drawCan(it){
+  ctx.save(); ctx.translate(it.x, it.y); if (it.state === 'air') { ctx.translate(0, -15); ctx.rotate(it.a); ctx.translate(0, 15); }
+  const rise = it.state === 'rail' ? (1 - ease.out(clamp01(it.t / .25))) * 34 : 0; ctx.translate(0, rise);
+  if (it.kind === 'milk') {
+    ctx.fillStyle = C.ink; ctx.fillRect(-10, -34, 20, 34); ctx.fillRect(-6, -44, 12, 11);
+    ctx.fillStyle = '#fafafa'; ctx.fillRect(-8, -32, 16, 30); ctx.fillRect(-4, -42, 8, 9); ctx.fillStyle = C.orange; ctx.fillRect(-6, -48, 12, 5);
+    ctx.fillStyle = C.light; ctx.fillRect(-8, -22, 16, 6);
+  } else {
+    ctx.fillStyle = C.dark; ctx.fillRect(-11, -30, 22, 30); ctx.fillStyle = C.mid; ctx.fillRect(-9, -28, 18, 26);
+    ctx.fillStyle = C.light; ctx.fillRect(-9, -20, 18, 9); ctx.fillStyle = C.dark; ctx.fillRect(-11, -30, 22, 3); ctx.fillRect(-11, -3, 22, 3);
+  }
+  ctx.restore();
+}
+function drawCrow(k){
+  let x = k.x, y = RAIL_Y, flap = 0;
+  if (k.state === 'in') { const e = ease.out(clamp01(k.t / .6)); x = k.x + k.from * (1 - e) * 220; y = RAIL_Y - (1 - e) * 160; flap = 1; }
+  if (k.state === 'out') { const e = clamp01(k.t / .8); x = k.x - k.from * e * 260; y = RAIL_Y - e * e * 220; flap = 1; }
+  const wing = flap ? Math.sin(T * 30) * 8 : 0, dir = k.state === 'out' ? -k.from : k.from;
+  ctx.save(); ctx.translate(x, y); ctx.scale(-dir, 1);
+  ctx.fillStyle = C.black; ctx.fillRect(-12, -20, 22, 14); ctx.fillRect(6, -28, 10, 10); ctx.fillRect(-18, -18, 7, 6);
+  ctx.fillStyle = C.dark; ctx.fillRect(16, -24, 7, 3); ctx.fillStyle = C.white; ctx.fillRect(11, -25, 2, 2);
+  ctx.fillStyle = C.ink; ctx.fillRect(-8, -24 - wing, 14, 6);
+  if (!flap) { ctx.fillStyle = C.dark; ctx.fillRect(-3, -6, 2, 6); ctx.fillRect(3, -6, 2, 6); }
+  ctx.restore();
+}
+// le barillet du revolver : 6 chambres, pleines ou vides
+function drawDrum(){
+  const c = CN, rot = c.reload >= 0 ? c.reload * 7 : 0, empty = c.bullets === 0 && c.reload < 0;
+  const pulse = empty ? 1 + Math.sin(T * 8) * .06 : 1;
+  ctx.save(); ctx.translate(DRUM.x, DRUM.y); ctx.scale(pulse, pulse); ctx.rotate(rot);
+  ctx.fillStyle = C.dark; ctx.beginPath(); ctx.arc(0, 0, DRUM.r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = C.mid; ctx.beginPath(); ctx.arc(0, 0, DRUM.r - 5, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 - Math.PI / 2, x = Math.cos(a) * 22, y = Math.sin(a) * 22;
+    ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = i < c.bullets ? C.orange : C.white; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  if (empty) drawText('Recharge !', DRUM.x, DRUM.y - 64, 2, C.orange, 'center');
+}
+function drawCans(){
+  const c = CN;
+  drawText(String(Math.round(c.disp)), W - 20, 22, 4, C.ink, 'right');
+  drawText('Record ' + (SAVE.best.cans || 0), W - 20, 54, 2, C.light, 'right');
+  drawText('Boîtes', 20, 28, 2, C.mid);
+  if (comboMult() > 1) drawText('x' + comboMult(), 20, 48, 3, C.orange);
+  drawTimeBar(c.time, CANS_TIME);
+  // la barrière
+  ctx.fillStyle = C.light; for (let x = 20; x < W; x += 80) ctx.fillRect(x, RAIL_Y, 8, 120);
+  ctx.fillStyle = C.mid; ctx.fillRect(0, RAIL_Y, W, 8); ctx.fillRect(0, RAIL_Y + 50, W, 8);
+  ctx.fillStyle = C.ground; ctx.fillRect(0, 690, W, 4);
+  // les boîtes sur la barrière, puis celles qui volent par-dessus
+  c.items.filter(it => it.state === 'rail').forEach(drawCan);
+  if (c.crow) drawCrow(c.crow);
+  // le cow-boy : il vise là où tu touches ; à la recharge, son chapeau saute
+  const jump = T - c.hatJump, lift = jump < .5 ? Math.sin(jump / .5 * Math.PI) * 30 : 0;
+  cowboy(60, 700, .9, 1, { seed: 2, pose: 'aim', armA: c.reload >= 0 ? .9 : c.aim, flash: !!c.shot && c.shot.t < .06, hatLift: lift });
+  if (c.shot && c.shot.t < .06) { ctx.strokeStyle = C.orange; ctx.lineWidth = 2; ctx.setLineDash([5, 6]); ctx.beginPath(); ctx.moveTo(74 + Math.cos(c.aim) * 50, 640 + Math.sin(c.aim) * 50); ctx.lineTo(c.shot.x, c.shot.y); ctx.stroke(); ctx.setLineDash([]); }
+  c.items.filter(it => it.state === 'air').forEach(drawCan);
+  drawDrum();
+  drawParts(); drawFloaters();
+  if (c.state === 'play' && c.t < 3 && !c.hits) drawText('Touche les boîtes pour tirer !', 180, 520, 2, C.mid, 'center');
+  if (c.state === 'end') drawText('Temps écoulé !', 180, 160, 4, C.ink, 'center');
+  if (c.state === 'over') {
+    drawEndScreen('Fin du tir', 'Boîtes touchées : ' + c.hits, String(c.score), 'Record : ' + (SAVE.best.cans || 0), 'againC');
+    if (c.newBest && Math.floor(T * 3) % 2 === 0) drawText('Nouveau record !', 180, 376, 3, C.orange, 'center');
+  }
+}
+
 // ---------- Pseudo (choisi une seule fois, au premier lancement) ----------
 const pseudoEl = document.getElementById('pseudo');
 let nameErr = '';
@@ -1228,9 +1391,9 @@ async function lbLoad(){
   } catch(e){ lbState = 'err'; }
 }
 function drawBoard(){
-  drawText('Classement', 180, 50, 4, C.ink, 'center');
-  hat(180, 40, 1, C.orange);
-  [['duel', 'Duel'], ['wanted', 'Wanted'], ['lasso', 'Lasso'], ['saloon', 'Saloon']].forEach(([g, n], i) => button('tab-' + g, 12 + i * 85, 84, 80, 36, n, { main: boardGame === g }));
+  drawText('Classement', 180, 40, 4, C.ink, 'center');
+  hat(180, 34, .8, C.orange);
+  [['duel', 'Duel'], ['wanted', 'Wanted'], ['lasso', 'Lasso'], ['saloon', 'Saloon'], ['cans', 'Boîtes']].forEach(([g, n], i) => button('tab-' + g, i < 3 ? 15 + i * 112 : 71 + (i - 3) * 112, i < 3 ? 80 : 124, 106, 34, n, { main: boardGame === g }));
   // même pseudo = même joueur (ex. Safari et l'icône de l'écran d'accueil) : on garde son meilleur score ;
   // ceux qui n'ont pas encore marqué de points n'apparaissent pas
   const best = {};
@@ -1244,7 +1407,7 @@ function drawBoard(){
     const meI = rows.findIndex(r => r.name === SAVE.name);
     const shown = meI >= 12 ? rows.slice(0, 11).concat([rows[meI]]) : rows.slice(0, 12);
     shown.forEach((r, i) => {
-      const y = 140 + i * 40, me = r.name === SAVE.name;
+      const y = 186 + i * 38, me = r.name === SAVE.name;
       if (me) { ctx.fillStyle = '#fbe3d2'; ctx.fillRect(20, y - 8, 320, 34); }
       drawText(String(r.rank), 50, y, 3, me ? C.orange : C.mid, 'right');
       drawText(r.name, 66, y + 4, 2, C.ink);
@@ -1266,6 +1429,7 @@ cvs.addEventListener('pointerdown', e => {
   if (scene === 'wanted' && WT.state === 'play') { tapWanted(p); return; }
   if (scene === 'lasso' && LS.state === 'play') { lassoDown(); return; }
   if (scene === 'saloon' && SA.state === 'play') { saloonDown(p); return; }
+  if (scene === 'cans' && CN.state === 'play') { tapCans(p); return; }
   const b = hit(p); pressId = b ? b.id : null;
   // mode test caché : toucher 5 fois le logo
   if (scene === 'title' && !askReset && p.y > 150 && p.y < 320){ const n = performance.now(); titleTaps = n - titleTapT < 600 ? titleTaps + 1 : 1; titleTapT = n; if (titleTaps >= 5) { titleTaps = 0; testMode(); } }
@@ -1284,14 +1448,15 @@ cvs.addEventListener('pointerup', e => {
   else if (id === 'music') { SAVE.music = !SAVE.music; save(); Music.volume(); }
   else if (id === 'sound') { SAVE.sound = !SAVE.sound; save(); }
   else if (id === 'back' || id === 'town') go(id === 'back' ? 'title' : 'town');
-  else if (id === 'board') { boardFrom = scene; boardGame = ['wanted', 'lasso', 'saloon'].includes(scene) ? scene : 'duel'; go('board'); }
+  else if (id === 'board') { boardFrom = scene; boardGame = ['wanted', 'lasso', 'saloon', 'cans'].includes(scene) ? scene : 'duel'; go('board'); }
   else if (id.startsWith('tab-')) boardGame = id.slice(4);
-  else if (id === 'boardBack') go(['duel', 'wanted', 'lasso', 'saloon'].includes(boardFrom) ? 'town' : boardFrom);
+  else if (id === 'boardBack') go(['duel', 'wanted', 'lasso', 'saloon', 'cans'].includes(boardFrom) ? 'town' : boardFrom);
   else if (id === 'nameOk') nameOk();
   else if (id === 'g-duel' || id === 'again') go('duel');
   else if (id === 'g-wanted' || id === 'againW') go('wanted');
   else if (id === 'g-lasso' || id === 'againL') go('lasso');
   else if (id === 'g-saloon' || id === 'againS') go('saloon');
+  else if (id === 'g-cans' || id === 'againC') go('cans');
 });
 cvs.addEventListener('pointercancel', () => { pressId = null; if (LS.hold) lassoUp(); SA.drag = null; });
 // mode test : propose d'effacer les records (pour tester depuis zéro), confirmé dans le jeu
